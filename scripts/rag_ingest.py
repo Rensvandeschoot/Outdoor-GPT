@@ -124,8 +124,7 @@ def main():
     # Embed in batches
     embeddings = []
     for i in range(0, len(all_chunks), args.batch_size):
-        batch = [c["text"] for c in all_chunks[i:i + args.batch_size]]
-        embeddings.append(embed_texts(batch, args.embedding_server_url))
+        embeddings.append(embed_batch(all_chunks[i:i + args.batch_size]))
         done = min(i + args.batch_size, len(all_chunks))
         print(f"  {done}/{len(all_chunks)}", end="\r")
     embeddings = np.vstack(embeddings)
