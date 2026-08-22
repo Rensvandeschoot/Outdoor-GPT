@@ -32,6 +32,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `prompts.json` | modified | The three prompts behind the rotary dial |
 | `scripts/rag_ingest.py` | new | Turns documents into the search index (chunks + embeddings) |
 | `scripts/rag.py` | new | Looks up the relevant chunks during a conversation |
+| `scripts/rag_test.py` | new | Sanity-checks a built index with test questions |
 | `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration + the `--rag_index` options |
 | `scripts/download_embedding_model.sh` / `.ps1` | new | Fetches the embedding model (Pi / Windows) |
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
@@ -89,7 +90,29 @@ Repeat this whenever you add or remove documents (the index is rebuilt from scra
 
    You'll see the number of chunks per document, then the embedding progress. Large collections (tens of thousands of chunks) can take tens of minutes — just let it run.
 
-3. Done? You can stop the embedding server in terminal 1 (Ctrl+C). The `rag_index/` folder is the end result.
+3. Done? The `rag_index/` folder is the end result.
+
+### Sanity-check the index
+
+Before shipping the index to the Pi, check that retrieval actually finds the right manuals. With the embedding server still running (terminal 1):
+
+```
+python scripts\rag_test.py
+```
+
+This runs a built-in set of test questions (you can also pass your own: `python scripts\rag_test.py "How do I treat a burn?"`). For each question it prints the best-matching chunks with their similarity score and source document. With the current document collection (18 documents, 8,082 chunks) it looks like this:
+
+| Question | Best match | Score |
+| -------- | ---------- | ----- |
+| How do I purify water so it is safe to drink? | FM 21-76 US Army Survival Manual | 0.63 |
+| What can I cook over a campfire with just potatoes and bacon? | Boy Scout Handbook + Camping and Camp Cooking | 0.60 |
+| How do I build a shelter to stay warm at night? | USMC Summer Survival Handbook + FM 21-76 | 0.69 |
+| How do I treat a snake bite? | FM 4-25.11 First Aid | 0.78 |
+| What is the capital of France? *(off-topic control)* | — no match above threshold | ✓ |
+
+Two things to look for: each question should land in a **plausible source document**, and the off-topic control should return **no match** — that means the agent will answer general questions on its own knowledge instead of dragging in irrelevant survival chunks. Scores around 0.6+ indicate a solid match; if everything scores near the 0.35 threshold, the collection probably doesn't cover the topics you're asking about.
+
+You can stop the embedding server now (Ctrl+C in terminal 1).
 
 ## Step 4 — Getting everything onto the Pi
 
