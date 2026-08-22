@@ -20,16 +20,16 @@ This project builds on the work of others:
 
 The stock edge_voice_agent answers purely from the language model itself. We add two things:
 
-1. **Three outdoor prompts** behind the rotary dial (`scripts/prompts.json`).
+1. **Three outdoor prompts** behind the rotary dial (`prompts.json` in the repo root — edit this file to change what the assistants do).
 2. **RAG** (Retrieval-Augmented Generation): the documents in `docs/` are cut into small pieces of text ("chunks") and converted into vectors ("embeddings") stored on the SD card. For every spoken question, the Pi looks up the best-matching pieces and hands them to the language model as context. This lets a small offline model give answers grounded in the actual manuals.
 
 ### Repository layout
 
-Everything in `scripts/` is exactly what gets copied over the upstream code on the Pi:.
+Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over the upstream code on the Pi:
 
 | File | New/modified | Purpose |
 | ---- | ------------ | ------- |
-| `scripts/prompts.json` | modified | The three prompts behind the rotary dial |
+| `prompts.json` | modified | The three prompts behind the rotary dial |
 | `scripts/rag_ingest.py` | new | Turns documents into the search index (chunks + embeddings) |
 | `scripts/rag.py` | new | Looks up the relevant chunks during a conversation |
 | `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration + the `--rag_index` options |
@@ -101,7 +101,7 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
 
    ```
    git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
-   cp Outdoor-GPT/scripts/* edge_voice_agent/
+   cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
    ```
 
    (After a `git pull` in Outdoor-GPT, repeat the `cp` command.)
