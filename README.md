@@ -14,7 +14,7 @@ This project builds on the work of others:
 
 - **Hardware & concept**: [handcrank / CrankGPT](https://squeezlabs.github.io/handcrank/) by Squeez Labs — the telephone with the crank, rotary dial and Raspberry Pi.
 - **Voice agent**: the code in this repo is a fork of [ktomanek/edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) (Apache 2.0) — an offline voice assistant (speech recognition via Moonshine, speech synthesis via Piper, LLM via llama.cpp). This repo contains **only our additions and modified files**; everything else comes straight from that upstream repo (see [Step 4](#step-4--getting-everything-onto-the-pi)).
-- **Knowledge base**: the documents in `docs/` are a selection from [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG) — a curated collection of public-domain survival and medical content (US Army field manuals, FEMA guides, CDC material; some CC BY-SA 4.0 Wikipedia articles). We use their source documents only, not their code.
+- **Knowledge base**: the documents in `docs/` are public-domain and freely-redistributable survival, first-aid and outdoor-cooking manuals. See [`docs/README.md`](docs/README.md) for the full list of documents, their original sources and licenses. (The selection was inspired by [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG).)
 
 ## What this repo adds
 
@@ -40,7 +40,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 
 ## Step 1 — Collect documents
 
-Put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/`, for example `docs/survival/` and `docs/medical/`. Subfolders are ignored by git, so large collections never end up in the repo. The one file directly in `docs/` — `test_document.md` — is tracked on purpose: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before committing to a big collection.
+Put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/` — one subfolder per source. Subfolders are ignored by git, so large collections never end up in the repo; the documents currently included, with their sources and licenses, are listed in [`docs/README.md`](docs/README.md). The one file directly in `docs/` — `test_document.md` — is tracked on purpose: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before committing to a big collection.
 
 Two things to keep in mind:
 
