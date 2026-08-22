@@ -38,10 +38,12 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
 
+The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
+
 
 ## Step 1 — Collect documents
 
-Put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/` — one subfolder per source. Subfolders are ignored by git, so large collections never end up in the repo; the documents currently included, with their sources and licenses, are listed in [`docs/README.md`](docs/README.md). The one file directly in `docs/` — `test_document.md` — is tracked on purpose: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before committing to a big collection.
+Put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/` — one subfolder per source. The documents are committed to this (private) repo, so the Pi gets them with a plain `git clone`; the current collection, with sources and licenses, is listed in [`docs/README.md`](docs/README.md) — only add material that is public domain or freely redistributable. The file `test_document.md` directly in `docs/` is a minimal test: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before indexing a big collection.
 
 Two things to keep in mind:
 
@@ -120,14 +122,15 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
 
 1. **On the Pi** (once): install [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) following their Readme (llama.cpp, Python environment, `python setup.py`, model downloads). Make sure the stock agent works before continuing.
 
-2. **On the Pi** (once): clone this repo next to it and copy our files over the upstream code:
+2. **On the Pi** (once): clone this repo next to it and copy our files over the upstream code. The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`sudo apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS:
 
    ```
    git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
    cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
+   cp -r Outdoor-GPT/rag_index edge_voice_agent/
    ```
 
-   (After a `git pull` in Outdoor-GPT, repeat the `cp` command.)
+   The built index travels inside the repo, so there is nothing to transfer manually.
 
 3. **On the Pi** (once): download the embedding model:
 
@@ -136,10 +139,12 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
    ./download_embedding_model.sh
    ```
 
-4. **From the PC**: copy the built index to the Pi (replace `<pi-ip>` with the Pi's IP address — run `hostname -I` on the Pi to find it):
+4. **Updating later**: after changing prompts, documents or scripts on the PC, rebuild the index if the documents changed (Step 3), commit and push. Then on the Pi:
 
    ```
-   scp -r rag_index pi@<pi-ip>:~/edge_voice_agent/
+   cd Outdoor-GPT && git pull && cd ..
+   cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
+   cp -r Outdoor-GPT/rag_index edge_voice_agent/
    ```
 
 ## Step 5 — Running it on the Pi
