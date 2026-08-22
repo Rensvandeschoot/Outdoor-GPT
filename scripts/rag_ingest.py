@@ -115,10 +115,11 @@ def main():
                             chunk["text"] = text  # index what was actually embedded
                         break
                     except Exception:
-                        words = text.split()
-                        if len(words) < 10:
+                        # Shrink by characters, not words: OCR noise can pack
+                        # thousands of tokens into a handful of huge "words".
+                        if len(text) < 200:
                             raise
-                        text = " ".join(words[:int(len(words) * 0.7)])
+                        text = text[:int(len(text) * 0.7)]
             return np.vstack(rows)
 
     # Embed in batches
