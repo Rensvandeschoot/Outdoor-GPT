@@ -217,9 +217,3 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Outdoor-GPT: large regenerable artifacts stay out of git
-models/
-rag_index/
-# document collections live in SUBFOLDERS of docs/ and stay out of git;
-# files directly in docs/ (like the pipeline test document) are tracked
-docs/*/
