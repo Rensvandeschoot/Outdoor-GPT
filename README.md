@@ -37,6 +37,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/download_embedding_model.sh` / `.ps1` | new | Fetches the embedding model (Pi / Windows) |
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
+| `scripts/startup_script.sh` | new | Boot script for off-grid use: starts both servers + agent (DietPi autostart) |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -163,6 +164,28 @@ python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index
 ```
 
 Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
+
+## Step 6 — Off-grid: start everything at boot
+
+Inside the phone there are no terminals: everything must start by itself when the Pi powers up. The handcrank build uses **DietPi's autostart** for this — a script at `/var/lib/dietpi/dietpi-autostart/custom.sh` (selected via `dietpi-autostart` → "Custom script") that already launches the llama server and the stock voice agent. Going off-grid with OutdoorGPT means teaching that script to start **three** things instead of two:
+
+1. the chat LLM server (now with the larger `2048` context),
+2. the embedding server (new),
+3. the voice agent (now with `--prompt_file prompts.json --rag_index rag_index`).
+
+`scripts/startup_script.sh` is a ready-made replacement. On the Pi:
+
+```
+sudo cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
+sudo cp ~/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
+sudo chmod +x /var/lib/dietpi/dietpi-autostart/custom.sh
+```
+
+**Before copying, open both files side by side** and make sure the variables at the top of `startup_script.sh` (`AGENT_DIR`, `CHAT_MODEL`, the venv path) match what your existing `custom.sh` uses — the existing script knows the true paths on your Pi. Then reboot and pick up the handset.
+
+Startup order is taken care of: both servers launch in the background and the agent waits for each of them (the LLM client and the RAG retriever both retry for ~30 seconds), so slow boots are fine. No other changes on the Pi are needed — no extra packages, no systemd units.
+
+One expectation for off-grid use: the Pi has no sleep mode, so a power dip means a full cold boot (~30–45 seconds with model loading) before the phone answers again.
 
 ## Testing & tuning
 

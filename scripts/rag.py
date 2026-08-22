@@ -11,6 +11,7 @@ for ingestion and for queries.
 
 import json
 import os
+import time
 
 import httpx
 import numpy as np
@@ -67,8 +68,17 @@ class RagRetriever:
         self.max_context_chars = max_context_chars
         self.client = httpx.Client(timeout=10.0)
 
-        # Fail fast if the embedding server is not reachable.
-        embed_texts(["ping"], self.embedding_server_url, client=self.client)
+        # Check that the embedding server is reachable, allowing it time to
+        # come up when everything starts together at boot (off-grid autostart).
+        for attempt in range(30):
+            try:
+                embed_texts(["ping"], self.embedding_server_url, client=self.client)
+                break
+            except Exception:
+                if attempt == 29:
+                    raise
+                print(f">> Waiting for embedding server at {self.embedding_server_url}... ({attempt + 1}/30)")
+                time.sleep(1.0)
 
     def retrieve(self, query):
         """Return list of (score, chunk) for the query, best first."""
