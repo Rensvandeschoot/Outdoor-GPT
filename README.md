@@ -121,11 +121,14 @@ You can stop the embedding server now (Ctrl+C in terminal 1).
 
 The Pi runs the full voice agent. Since this repo only contains our changes, you first set up the upstream code and then copy our files on top.
 
-1. **On the Pi** (once): install [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) following their Readme (llama.cpp, Python environment, `python setup.py`, model downloads). Make sure the stock agent works before continuing.
+> **Paths on a CrankGPT DIY image**: the agent lives in `/root/dev/edge_voice_agent`, the virtualenv is `venv_rpi`, and DietPi runs everything as `root`. The commands below use that layout; adjust them if your Pi differs (check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths).
+
+1. **On the Pi** (once): if you built the Pi yourself rather than from the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), install [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) following their Readme (llama.cpp, Python environment, `python setup.py`, model downloads). Make sure the stock agent works before continuing.
 
 2. **On the Pi** (once): clone this repo next to it and copy our files over the upstream code. The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`sudo apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS:
 
    ```
+   cd /root/dev
    git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
    cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
    cp -r Outdoor-GPT/rag_index edge_voice_agent/
@@ -136,56 +139,65 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
 3. **On the Pi** (once): download the embedding model:
 
    ```
-   cd edge_voice_agent
+   cd /root/dev/edge_voice_agent
    ./download_embedding_model.sh
    ```
 
 4. **Updating later**: after changing prompts, documents or scripts on the PC, rebuild the index if the documents changed (Step 3), commit and push. Then on the Pi:
 
    ```
-   cd Outdoor-GPT && git pull && cd ..
+   cd /root/dev/Outdoor-GPT && git pull && cd ..
    cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
    cp -r Outdoor-GPT/rag_index edge_voice_agent/
    ```
 
 ## Step 5 — Running it on the Pi
 
-Three terminals (or three `tmux` windows), all in `~/edge_voice_agent`:
+For a first hands-on test, three terminals (or three `tmux` windows), all in `/root/dev/edge_voice_agent` with the venv activated (`source venv_rpi/bin/activate`):
 
 ```bash
-# Terminal 1: the language model, with extra context for the RAG chunks
-./start_llamacpp_server.sh models/llms/LFM2-350M-Q4_K_M.gguf 2048
+# Terminal 1: the language model, with enough context for the RAG chunks
+./start_llamacpp_server.sh models/llms/LFM2.5-1.2B-Instruct-Q4_K_M.gguf 4096
 
 # Terminal 2: the embedding server
 ./start_embedding_server.sh
 
 # Terminal 3: the voice agent itself
-python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index rag_index
+python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index rag_index --verbose
 ```
 
-Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
+Use whichever chat model your Pi actually has in `models/llms/` — a CrankGPT image ships LFM2.5-1.2B, which is a good size for RAG answers. Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
+
+Once this works, Step 6 makes it start on its own.
 
 ## Step 6 — Off-grid: start everything at boot
 
-Inside the phone there are no terminals: everything must start by itself when the Pi powers up. The handcrank build uses **DietPi's autostart** for this — a script at `/var/lib/dietpi/dietpi-autostart/custom.sh` (selected via `dietpi-autostart` → "Custom script") that already launches the llama server and the stock voice agent. Going off-grid with OutdoorGPT means teaching that script to start **three** things instead of two:
+Inside the phone there are no terminals: everything must start by itself when the Pi powers up. CrankGPT handles this with **DietPi's autostart** — a script at `/var/lib/dietpi/dietpi-autostart/custom.sh` (selected via `dietpi-autostart` → "Custom script"). The [CrankGPT DIY version](https://github.com/squeezlabs/crankgpt_diy/blob/main/dietpi/startup_script.sh) of that script pins the CPU governor to `performance`, enters the project directory, activates the virtualenv, and then runs one of two modes chosen by a `MODE` variable at the top: **1** = voice agent, **2** = translation. Each mode starts its own llama-server (backgrounded, logging to `/var/log/llama-server.log`) and then runs the matching CLI in the foreground with the phone's audio devices wired in.
 
-1. the chat LLM server (now with the larger `2048` context),
-2. the embedding server (new),
-3. the voice agent (now with `--prompt_file prompts.json --rag_index rag_index`).
+`scripts/startup_script.sh` in this repo is that same script with a **third mode** added:
 
-`scripts/startup_script.sh` is a ready-made replacement. On the Pi:
+| MODE | What it starts |
+| ---- | -------------- |
+| 1 | Stock voice agent (unchanged) |
+| 2 | Translation agent (unchanged) |
+| **3** | **OutdoorGPT: chat LLM (context 4096) + embedding server + agent with `--rag_index`** |
+
+Mode 3 keeps everything the other modes do — the `performance` governor, `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
+
+To install it on the Pi:
 
 ```
 sudo cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
-sudo cp ~/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
+sudo cp /root/dev/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
 sudo chmod +x /var/lib/dietpi/dietpi-autostart/custom.sh
+sudo reboot
 ```
 
-**Before copying, open both files side by side** and make sure the variables at the top of `startup_script.sh` (`AGENT_DIR`, `CHAT_MODEL`, the venv path) match what your existing `custom.sh` uses — the existing script knows the true paths on your Pi. Then reboot and pick up the handset.
+**Before copying, diff it against your current script** (`diff /var/lib/dietpi/dietpi-autostart/custom.sh /root/dev/edge_voice_agent/startup_script.sh`) and carry over anything your Pi does differently — the project directory, the venv name, the audio device numbers, and the model file in `OUTDOOR_MODEL`. Your existing script is the source of truth for those.
 
-Startup order is taken care of: both servers launch in the background and the agent waits for each of them (the LLM client and the RAG retriever both retry for ~30 seconds), so slow boots are fine. No other changes on the Pi are needed — no extra packages, no systemd units.
+Startup order takes care of itself: both servers start in the background and the agent waits for each of them (the LLM client and the RAG retriever each retry for ~30 seconds), so a slow boot is fine. Nothing else on the Pi needs changing — no extra packages, no systemd units, and the embedding server is just a second llama.cpp process.
 
-One expectation for off-grid use: the Pi has no sleep mode, so a power dip means a full cold boot (~30–45 seconds with model loading) before the phone answers again.
+Two things to expect off-grid: the Pi has no sleep mode, so a voltage dip means a full cold boot (roughly 30–45 seconds including model loading) before the phone answers again, and the RAG index adds a few seconds to that startup while `embeddings.npy` is read from the SD card.
 
 ## Testing & tuning
 
