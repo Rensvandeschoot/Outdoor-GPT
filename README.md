@@ -40,6 +40,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/startup_script.sh` | new | Boot script for off-grid use: starts both servers + agent (DietPi autostart) |
 | `scripts/config.sh` | new | Per-device paths and settings, sourced by the shell scripts |
 | `scripts/install_on_pi.sh` | new | One-shot installer/updater for the Pi; also the update path |
+| `scripts/check_gpio.sh` | new | Verifies the rotary dial and interrupt button wiring |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -133,7 +134,7 @@ None of this comes from this repo; it is the CrankGPT phone itself. Easiest is t
 | ------------ | ------------------------ |
 | DietPi on a Raspberry Pi 5, everything running as `root` | — |
 | Audio HAT (ReSpeaker 2-Mic, `wm8960` sound card) and its driver | indirectly, via the device listing it prints |
-| GPIO wiring for the rotary dial and the interrupt button | no |
+| GPIO wiring for the rotary dial and the interrupt button | no — verify separately with `./check_gpio.sh` (see [Wiring](#wiring)) |
 | llama.cpp built, with `llama-server` at the path in `config.sh` | yes, fatal if missing |
 | [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) installed in `/root/edge_voice_agent` with a `venv` | yes, fatal if missing |
 | Its models: a chat model plus `moonshine_v1_tiny`, `piper`, `silero_vad` | yes, warns if missing |
@@ -158,7 +159,30 @@ It is safe to re-run, so it doubles as the update path:
 cd /root/Outdoor-GPT && git pull && ./scripts/install_on_pi.sh && reboot
 ```
 
-One thing always needs a human check on a new device: the **audio device numbers**. `AUDIO_IN` and `AUDIO_OUT` in `config.sh` are indices into sounddevice's device list, not ALSA card numbers, and that numbering can differ between installs. The installer prints the list at the end — make sure the two indices point at the phone's microphone and speaker. On this Pi they are `AUDIO_IN=1` and `AUDIO_OUT=0`, with a single `wm8960soundcard` as card 0.
+### Wiring
+
+The dial and the button are read by upstream's `gpio_inputs.py` (`RaspberryPi5GPIOHandler`), so these pin numbers are fixed in code rather than configurable. BCM numbering; the pins were chosen to avoid clashing with the ReSpeaker 2-Mic HAT:
+
+| Function | GPIO | Physical pin |
+| -------- | ---- | ------------ |
+| Interrupt button | 22 | 15 |
+| Rotary position 1 → Outdoor Tips | 23 | 16 |
+| Rotary position 2 → Campfire Recipes | 24 | 18 |
+| Rotary position 3 → Survive the Night | 17 | 11 |
+
+Every line uses an internal pull-up, so a pin reads **high** when idle and is pulled **low** when its contact closes against ground. The dial therefore grounds exactly one of the three position pins at a time.
+
+To check a freshly wired phone:
+
+```
+cd /root/edge_voice_agent && ./check_gpio.sh
+```
+
+It prints the four pins live for 20 seconds while you turn the dial and press the button, then reports any pin that never went low — which is exactly the symptom of a wire on the wrong header pin. It reads the GPIO registers directly, so it works fine while the agent is running and it changes nothing. It needs `pinctrl` (from `raspi-utils`, the Pi 5 successor to `raspi-gpio`) or `raspi-gpio` itself; it tells you if neither is installed.
+
+### Audio devices
+
+One more thing always needs a human check on a new device: the **audio device numbers**. `AUDIO_IN` and `AUDIO_OUT` in `config.sh` are indices into sounddevice's device list, not ALSA card numbers, and that numbering can differ between installs. The installer prints the list at the end — make sure the two indices point at the phone's microphone and speaker. On this Pi they are `AUDIO_IN=1` and `AUDIO_OUT=0`, with a single `wm8960soundcard` as card 0.
 
 ### Device configuration
 
