@@ -53,9 +53,12 @@ case $MODE in
         sh start_embedding_server.sh > /var/log/embedding-server.log 2>&1 &
 
         echo "Starting OutdoorGPT..."
+        # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
+        VERBOSE_FLAG=""
+        [ "${VERBOSE:-0}" = "1" ] && VERBOSE_FLAG="--verbose"
         # The agent waits for both servers itself (~30s retry each), so the
         # background starts above do not need a sleep here.
-        python voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index}
+        python voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG
         ;;
     *)
         echo "Invalid choice. Exiting."

@@ -37,3 +37,10 @@ PLATFORM=rpi5
 AUDIO_IN=1
 AUDIO_OUT=0
 SPEAKING_RATE=1.
+
+# Set to 1 to run the agent with --verbose at boot. Every question then logs
+# the retrieved chunks ("RAG context injected") to the journal, which is how
+# you check that retrieval is really feeding the model. Read it with:
+#   journalctl -u dietpi-autostart_custom.service -b -f
+# Set back to 0 afterwards; it is noisy.
+VERBOSE=0
