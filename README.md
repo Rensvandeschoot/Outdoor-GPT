@@ -39,6 +39,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
 | `scripts/startup_script.sh` | new | Boot script for off-grid use: starts both servers + agent (DietPi autostart) |
 | `scripts/config.sh` | new | Per-device paths and settings, sourced by the shell scripts |
+| `scripts/install_on_pi.sh` | new | One-shot installer/updater for the Pi; also the update path |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -120,38 +121,44 @@ You can stop the embedding server now (Ctrl+C in terminal 1).
 
 ## Step 4 — Getting everything onto the Pi
 
-The Pi runs the full voice agent. Since this repo only contains our changes, you first set up the upstream code and then copy our files on top.
+The Pi runs the full voice agent. This repo contains only our changes, so a working stock setup has to exist first; the installer then puts our layer on top of it.
 
 > **Paths**: DietPi runs everything as `root`, the agent lives in `/root/edge_voice_agent` and its virtualenv is `venv`. If your Pi differs, check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths — and put them in `scripts/config.sh` (see [Device configuration](#device-configuration)).
 
-1. **On the Pi** (once): if you built the Pi yourself rather than from the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), install [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) following their Readme (llama.cpp, Python environment, `python setup.py`, model downloads). Make sure the stock agent works before continuing.
+### What has to be there first
 
-2. **On the Pi** (once): clone this repo next to it and copy our files over the upstream code. The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`sudo apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS:
+None of this comes from this repo; it is the CrankGPT phone itself. Easiest is the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), which brings all of it:
 
-   ```
-   cd /root
-   git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
-   cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
-   cp -r Outdoor-GPT/rag_index edge_voice_agent/
-   ```
+| Prerequisite | Checked by the installer |
+| ------------ | ------------------------ |
+| DietPi on a Raspberry Pi 5, everything running as `root` | — |
+| Audio HAT (ReSpeaker 2-Mic, `wm8960` sound card) and its driver | indirectly, via the device listing it prints |
+| GPIO wiring for the rotary dial and the interrupt button | no |
+| llama.cpp built, with `llama-server` at the path in `config.sh` | yes, fatal if missing |
+| [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) installed in `/root/edge_voice_agent` with a `venv` | yes, fatal if missing |
+| Its models: a chat model plus `moonshine_v1_tiny`, `piper`, `silero_vad` | yes, warns if missing |
+| DietPi autostart set to "Custom script" (index 14) | yes, warns if not |
 
-   The built index travels inside the repo, so there is nothing to transfer manually.
+### Install
 
-3. **On the Pi** (once): check `config.sh` and download the embedding model:
+The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS.
 
-   ```
-   cd /root/edge_voice_agent
-   nano config.sh
-   ./download_embedding_model.sh
-   ```
+```
+cd /root
+git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
+cd Outdoor-GPT && ./scripts/install_on_pi.sh
+reboot
+```
 
-4. **Updating later**: after changing prompts, documents or scripts on the PC, rebuild the index if the documents changed (Step 3), commit and push. Then on the Pi:
+`install_on_pi.sh` does the whole job: it checks the prerequisites above, copies the scripts, `prompts.json`, `config.sh` and the built `rag_index/` into the agent directory, downloads the embedding model if it is not already there, installs the boot script over `custom.sh` (with a timestamped backup and a shebang check), and disables the network wait that costs 42 seconds per boot. Anything it cannot safely automate is listed at the end under "Still needs attention" rather than guessed at.
 
-   ```
-   cd /root/Outdoor-GPT && git pull && cd ..
-   cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
-   cp -r Outdoor-GPT/rag_index edge_voice_agent/
-   ```
+It is safe to re-run, so it doubles as the update path:
+
+```
+cd /root/Outdoor-GPT && git pull && ./scripts/install_on_pi.sh && reboot
+```
+
+One thing always needs a human check on a new device: the **audio device numbers**. `AUDIO_IN` and `AUDIO_OUT` in `config.sh` are indices into sounddevice's device list, not ALSA card numbers, and that numbering can differ between installs. The installer prints the list at the end — make sure the two indices point at the phone's microphone and speaker. On this Pi they are `AUDIO_IN=1` and `AUDIO_OUT=0`, with a single `wm8960soundcard` as card 0.
 
 ### Device configuration
 
@@ -226,7 +233,7 @@ cat /boot/dietpi/.dietpi-autostart_index
 
 `14` means "custom script" and is what a CrankGPT image already has. Anything else (`0` is plain console login) means the script is never run at boot; set it with `dietpi-autostart`. Note that `AUTO_SETUP_AUTOSTART_TARGET_INDEX` in `/boot/dietpi.txt` is only the install-time value and may disagree — the file above is the live one.
 
-To install the script:
+`install_on_pi.sh` (Step 4) already installs this script, so normally there is nothing to do here. To do it by hand:
 
 ```
 cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
