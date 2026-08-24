@@ -165,9 +165,14 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
 | `EMBED_MODEL` | all-MiniLM-L6-v2 | Must be the same model the index was built with |
 | `RAG_INDEX` | `rag_index` | Where the index lives |
 | `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
-| `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware |
+| `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
+| `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
+
+One setting deliberately lives outside this file: `AGENT_DIR` at the top of `startup_script.sh` (`/root/edge_voice_agent`), because that script has to know where to find `config.sh` before it can read it.
 
 Moving to another device means editing this one file. The server scripts still accept arguments, which override the config.
+
+`config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. For anything permanent, change it in the repo and push.
 
 ## Step 5 — Running it on the Pi
 
@@ -186,6 +191,17 @@ python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index
 
 `--verbose` is worth using here: it prints `>> RAG context injected` with the retrieved text for every question, which is the only way to see whether retrieval is actually contributing. Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
 
+To check retrieval on the Pi without involving speech at all, run the same sanity check as on the PC — the embedding server is enough, no chat model needed:
+
+```bash
+./start_embedding_server.sh > /tmp/emb.log 2>&1 &
+sleep 5
+source venv/bin/activate
+python rag_test.py
+```
+
+The scores should match the ones from the PC exactly; that confirms the index and the embedding model survived the trip intact.
+
 Once this works, Step 6 makes it start on its own.
 
 ## Step 6 — Off-grid: start everything at boot
@@ -202,14 +218,25 @@ Inside the phone there are no terminals: everything must start by itself when th
 
 Mode 3 keeps everything the other modes do — the `performance` governor, `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
 
-To install it on the Pi:
+DietPi must be set to run the custom script in the first place. Check with:
+
+```
+cat /boot/dietpi/.dietpi-autostart_index
+```
+
+`14` means "custom script" and is what a CrankGPT image already has. Anything else (`0` is plain console login) means the script is never run at boot; set it with `dietpi-autostart`. Note that `AUTO_SETUP_AUTOSTART_TARGET_INDEX` in `/boot/dietpi.txt` is only the install-time value and may disagree — the file above is the live one.
+
+To install the script:
 
 ```
 cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
 cp /root/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
 chmod +x /var/lib/dietpi/dietpi-autostart/custom.sh
+head -c 12 /var/lib/dietpi/dietpi-autostart/custom.sh | od -c | head -1
 reboot
 ```
+
+That `od` line is the shebang check: it must print `#   !   /   b   i   n   /   b   a   s   h  \n`. See the warning below for why.
 
 **Copy the file rather than hand-editing your existing one.** The shebang `#!/bin/bash` has to be the very first line: if anything precedes it — even a single blank line — systemd cannot execute the file and fails at boot with `Exec format error`, so *nothing* starts, in any mode. Hand-merging is exactly how such a blank line sneaks in. Everything device-specific already lives in `config.sh`, so the only line in this script you may need to touch is `AGENT_DIR` at the top.
 
@@ -251,7 +278,13 @@ Reverse it by moving the file back and reloading. Check the result with `systemd
 
 ## Testing & tuning
 
-- **See what's happening**: start the agent with `--verbose` — it shows which chunks are injected for each question. This is the best way to judge retrieval quality.
+- **See what's happening**: start the agent with `--verbose` — it shows which chunks are injected for each question. This is the best way to judge retrieval quality. When the phone starts on its own there is no terminal to pass flags to, so set `VERBOSE=1` in `config.sh` instead and reboot; the output then goes to the journal:
+
+  ```bash
+  journalctl -u dietpi-autostart_custom.service -b -f
+  ```
+
+  Set it back to `0` afterwards — it is noisy. Never hand-edit `custom.sh` to add the flag: that file's shebang must stay on line 1, and hand-editing is exactly how that breaks.
 - **Test without the dial**: with `--enable_keyboard_control`, the keys `g`/`s`/`f` switch to prompt 1/2/3, mirroring the rotary dial.
 - **Knobs**:
 
@@ -273,5 +306,11 @@ Symptoms we have actually hit, and what they mean:
 | Servers refuse to start only at boot, fine from a shell | `LLAMA_SERVER` not set to an absolute path; the boot service has a minimal `PATH` | Set the absolute path in `config.sh` |
 | Phone answers, but never uses the documents | `MODE` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` and reboot |
 | Agent exits at startup complaining it cannot reach a server | A model file named in `config.sh` does not exist, so that server died immediately | Check the two `*.log` files in `/var/log/` |
+| The autostart script never runs at all | `/boot/dietpi/.dietpi-autostart_index` is not `14` | Set it with `dietpi-autostart` |
+| `chunks.json` has a different checksum on the Pi than on the PC | Harmless: git normalises line endings, so the Windows copy has CRLF and the Pi has LF. The difference in bytes equals the number of lines | Compare `embeddings.npy` instead — that one is binary and must match exactly |
 
-Useful commands: `journalctl -u dietpi-autostart_custom.service -b --no-pager` for the boot itself, and `tail -f /var/log/llama-server.log /var/log/embedding-server.log` for the two servers.
+Useful commands: `journalctl -u dietpi-autostart_custom.service -b --no-pager` for the boot itself, `journalctl -u dietpi-autostart_custom.service -b -f` to follow it live (this is where `VERBOSE=1` output lands), and `tail -f /var/log/llama-server.log /var/log/embedding-server.log` for the two servers.
+
+### Known issue
+
+`ifup@eth0.service` takes 42 seconds on this Pi, most likely a DHCP timeout because `eth0` is configured as `auto` while no cable is connected (`ifup@wlan0` needs only 3.4 s). Since the boot no longer waits for the network this costs nothing at startup, but it does mean the wired interface is only usable about 47 seconds after power-on. Diagnose with `journalctl -b -u ifup@eth0.service` and `cat /etc/network/interfaces`.
