@@ -1,0 +1,39 @@
+# OutdoorGPT device configuration.
+#
+# Every value here is specific to one device. The shell scripts source this
+# file instead of guessing, so moving to another Pi means editing this file
+# and nothing else.
+#
+# This file is sourced, not executed: no shebang, no exec bit.
+#
+# Note: the agent directory itself is NOT configured here (this file lives
+# inside it). It is set at the top of startup_script.sh.
+
+# Absolute path to the llama.cpp server binary.
+# Must be absolute: at boot the DietPi autostart service runs with a minimal
+# PATH that does not include custom build directories.
+LLAMA_SERVER=/root/llama.cpp/build/bin/llama-server
+
+# Python virtualenv, relative to the agent directory.
+VENV=venv
+
+# Chat model and context size, relative to the agent directory.
+# The context has to hold the retrieved chunks on top of the conversation.
+CHAT_MODEL=models/llms/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
+CHAT_CONTEXT=4096
+
+# Embedding model for RAG, relative to the agent directory.
+EMBED_MODEL=models/embeddings/all-MiniLM-L6-v2-ggml-model-f16.gguf
+
+# Built RAG index, relative to the agent directory.
+RAG_INDEX=rag_index
+
+# Server ports.
+CHAT_PORT=8080
+EMBED_PORT=8081
+
+# Hardware settings for the voice agent.
+PLATFORM=rpi5
+AUDIO_IN=1
+AUDIO_OUT=0
+SPEAKING_RATE=1.

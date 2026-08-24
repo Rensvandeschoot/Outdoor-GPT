@@ -7,18 +7,25 @@
 #
 # ./start_embedding_server.sh [model.gguf]
 
-MODEL=${1:-models/embeddings/all-MiniLM-L6-v2-ggml-model-f16.gguf}
+# Device settings (llama-server path, model, port) come from config.sh next
+# to this script. An argument still overrides the model.
+CONFIG="$(dirname "$0")/config.sh"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+MODEL=${1:-${EMBED_MODEL:-models/embeddings/all-MiniLM-L6-v2-ggml-model-f16.gguf}}
+PORT=${EMBED_PORT:-8081}
 
 if [ ! -f "$MODEL" ]; then
   echo "Embedding model not found: $MODEL"
   echo "Download it first with: ./download_embedding_model.sh"
   exit 1
 fi
-
-# find llama-server binary path
-LLAMA_SERVER=$(which llama-server 2>/dev/null)
 if [ -z "$LLAMA_SERVER" ]; then
-  echo "llama-server not found in PATH. Please install llama.cpp or add it to PATH."
+  echo "LLAMA_SERVER is not set. Add the absolute path to llama-server in config.sh."
+  exit 1
+fi
+if [ ! -x "$LLAMA_SERVER" ]; then
+  echo "llama-server not executable at: $LLAMA_SERVER (check LLAMA_SERVER in config.sh)"
   exit 1
 fi
 
@@ -33,4 +40,4 @@ nice -n 10 \
   -c 512 -b 512 -ub 512 \
   --threads 2 \
   --host 0.0.0.0 \
-  --port 8081
+  --port $PORT

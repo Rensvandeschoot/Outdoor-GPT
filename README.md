@@ -38,6 +38,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
 | `scripts/startup_script.sh` | new | Boot script for off-grid use: starts both servers + agent (DietPi autostart) |
+| `scripts/config.sh` | new | Per-device paths and settings, sourced by the shell scripts |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -121,14 +122,14 @@ You can stop the embedding server now (Ctrl+C in terminal 1).
 
 The Pi runs the full voice agent. Since this repo only contains our changes, you first set up the upstream code and then copy our files on top.
 
-> **Paths on a CrankGPT DIY image**: the agent lives in `/root/dev/edge_voice_agent`, the virtualenv is `venv_rpi`, and DietPi runs everything as `root`. The commands below use that layout; adjust them if your Pi differs (check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths).
+> **Paths**: DietPi runs everything as `root`, the agent lives in `/root/edge_voice_agent` and its virtualenv is `venv`. If your Pi differs, check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths — and put them in `scripts/config.sh` (see [Device configuration](#device-configuration)).
 
 1. **On the Pi** (once): if you built the Pi yourself rather than from the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), install [edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) following their Readme (llama.cpp, Python environment, `python setup.py`, model downloads). Make sure the stock agent works before continuing.
 
 2. **On the Pi** (once): clone this repo next to it and copy our files over the upstream code. The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`sudo apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS:
 
    ```
-   cd /root/dev
+   cd /root
    git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
    cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
    cp -r Outdoor-GPT/rag_index edge_voice_agent/
@@ -136,28 +137,45 @@ The Pi runs the full voice agent. Since this repo only contains our changes, you
 
    The built index travels inside the repo, so there is nothing to transfer manually.
 
-3. **On the Pi** (once): download the embedding model:
+3. **On the Pi** (once): check `config.sh` and download the embedding model:
 
    ```
-   cd /root/dev/edge_voice_agent
+   cd /root/edge_voice_agent
+   nano config.sh
    ./download_embedding_model.sh
    ```
 
 4. **Updating later**: after changing prompts, documents or scripts on the PC, rebuild the index if the documents changed (Step 3), commit and push. Then on the Pi:
 
    ```
-   cd /root/dev/Outdoor-GPT && git pull && cd ..
+   cd /root/Outdoor-GPT && git pull && cd ..
    cp Outdoor-GPT/scripts/* Outdoor-GPT/prompts.json edge_voice_agent/
    cp -r Outdoor-GPT/rag_index edge_voice_agent/
    ```
 
+### Device configuration
+
+`config.sh` holds everything that is specific to one device, so the scripts never have to guess:
+
+| Setting | Value on this Pi | Why it matters |
+| ------- | ---------------- | -------------- |
+| `LLAMA_SERVER` | `/root/llama.cpp/build/bin/llama-server` | **Must be absolute.** At boot the autostart service gets a minimal `PATH` that excludes custom build directories, so looking the binary up by name fails there while it works fine in an interactive shell. |
+| `VENV` | `venv` | Virtualenv inside the agent directory |
+| `CHAT_MODEL` / `CHAT_CONTEXT` | LFM2.5-1.2B, 4096 | Context must hold the retrieved chunks plus the conversation |
+| `EMBED_MODEL` | all-MiniLM-L6-v2 | Must be the same model the index was built with |
+| `RAG_INDEX` | `rag_index` | Where the index lives |
+| `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
+| `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware |
+
+Moving to another device means editing this one file. The server scripts still accept arguments, which override the config.
+
 ## Step 5 — Running it on the Pi
 
-For a first hands-on test, three terminals (or three `tmux` windows), all in `/root/dev/edge_voice_agent` with the venv activated (`source venv_rpi/bin/activate`):
+For a first hands-on test, three terminals (or three `tmux` windows), all in `/root/edge_voice_agent` with the venv activated (`source venv/bin/activate`):
 
 ```bash
-# Terminal 1: the language model, with enough context for the RAG chunks
-./start_llamacpp_server.sh models/llms/LFM2.5-1.2B-Instruct-Q4_K_M.gguf 4096
+# Terminal 1: the language model (model and context come from config.sh)
+./start_llamacpp_server.sh
 
 # Terminal 2: the embedding server
 ./start_embedding_server.sh
@@ -166,7 +184,7 @@ For a first hands-on test, three terminals (or three `tmux` windows), all in `/r
 python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index rag_index --verbose
 ```
 
-Use whichever chat model your Pi actually has in `models/llms/` — a CrankGPT image ships LFM2.5-1.2B, which is a good size for RAG answers. Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
+`--verbose` is worth using here: it prints `>> RAG context injected` with the retrieved text for every question, which is the only way to see whether retrieval is actually contributing. Without `--rag_index` the agent behaves exactly like stock (no retrieval; terminal 2 isn't needed then).
 
 Once this works, Step 6 makes it start on its own.
 
@@ -187,13 +205,19 @@ Mode 3 keeps everything the other modes do — the `performance` governor, `--pl
 To install it on the Pi:
 
 ```
-sudo cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
-sudo cp /root/dev/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
-sudo chmod +x /var/lib/dietpi/dietpi-autostart/custom.sh
-sudo reboot
+cp /var/lib/dietpi/dietpi-autostart/custom.sh /var/lib/dietpi/dietpi-autostart/custom.sh.bak
+cp /root/edge_voice_agent/startup_script.sh /var/lib/dietpi/dietpi-autostart/custom.sh
+chmod +x /var/lib/dietpi/dietpi-autostart/custom.sh
+reboot
 ```
 
-**Before copying, diff it against your current script** (`diff /var/lib/dietpi/dietpi-autostart/custom.sh /root/dev/edge_voice_agent/startup_script.sh`) and carry over anything your Pi does differently — the project directory, the venv name, the audio device numbers, and the model file in `OUTDOOR_MODEL`. Your existing script is the source of truth for those.
+**Copy the file rather than hand-editing your existing one.** The shebang `#!/bin/bash` has to be the very first line: if anything precedes it — even a single blank line — systemd cannot execute the file and fails at boot with `Exec format error`, so *nothing* starts, in any mode. Hand-merging is exactly how such a blank line sneaks in. Everything device-specific already lives in `config.sh`, so the only line in this script you may need to touch is `AGENT_DIR` at the top.
+
+Check that it worked after rebooting:
+
+```
+journalctl -u dietpi-autostart_custom.service -b --no-pager | tail -20
+```
 
 Startup order takes care of itself: both servers start in the background and the agent waits for each of them (the LLM client and the RAG retriever each retry for ~30 seconds), so a slow boot is fine. Nothing else on the Pi needs changing — no extra packages, no systemd units, and the embedding server is just a second llama.cpp process.
 
@@ -211,4 +235,17 @@ Two things to expect off-grid: the Pi has no sleep mode, so a voltage dip means 
   | `--rag_min_score` | 0.35 | Minimum similarity; below this, chunks are ignored and the model answers on its own |
   | `--chunk_words` (ingest) | 150 | Chunk size in words; keep it small while the language model's context is small |
 
-- **Model ignoring the documents?** The small default model (LFM2-350M) is usually the limiting factor. A 1B+ parameter model (Q4 quantization) gives noticeably better answers on a Pi 5, at the cost of some latency. If you upgrade, remember to grow the context size in the start command (the `2048`) along with it.
+- **Model ignoring the documents?** A very small model (like LFM2-350M) is usually the limiting factor. A 1B+ parameter model (Q4 quantization) gives noticeably better answers on a Pi 5, at the cost of some latency. If you switch models, grow `CHAT_CONTEXT` in `config.sh` along with it.
+
+### Troubleshooting the boot
+
+Symptoms we have actually hit, and what they mean:
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| Nothing starts at boot, but running the script's lines by hand works | The shebang is not on line 1 of `custom.sh` (`journalctl` shows `Exec format error`) | Copy `startup_script.sh` over it instead of hand-editing |
+| Servers refuse to start only at boot, fine from a shell | `LLAMA_SERVER` not set to an absolute path; the boot service has a minimal `PATH` | Set the absolute path in `config.sh` |
+| Phone answers, but never uses the documents | `MODE` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` and reboot |
+| Agent exits at startup complaining it cannot reach a server | A model file named in `config.sh` does not exist, so that server died immediately | Check the two `*.log` files in `/var/log/` |
+
+Useful commands: `journalctl -u dietpi-autostart_custom.service -b --no-pager` for the boot itself, and `tail -f /var/log/llama-server.log /var/log/embedding-server.log` for the two servers.

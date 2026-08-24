@@ -9,34 +9,40 @@
 # ./start_llama_server.sh models/llms/LFM2-350M-Q4_K_M.gguf 2048
 
 
-# set model file
-MODEL=$1
-CONTEXT=${2:-1024}
+# Device settings (llama-server path, model, context, port) come from
+# config.sh next to this script. Arguments still override them.
+CONFIG="$(dirname "$0")/config.sh"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+MODEL=${1:-$CHAT_MODEL}
+CONTEXT=${2:-${CHAT_CONTEXT:-1024}}
+PORT=${CHAT_PORT:-8080}
 
 if [ -z "$MODEL" ]; then
-  echo "No model file specified. Please specify gguf file to use."
+  echo "No model file specified. Pass one as argument, or set CHAT_MODEL in config.sh."
   exit 1
 fi
 if [ ! -f "$MODEL" ]; then
   echo "Model file not found: $MODEL"
   exit 1
 fi
-
-# find llama-server binary path
-LLAMA_SERVER=$(which llama-server 2>/dev/null)
 if [ -z "$LLAMA_SERVER" ]; then
-  echo "llama-server not found in PATH. Please install llama.cpp or add it to PATH."
+  echo "LLAMA_SERVER is not set. Add the absolute path to llama-server in config.sh."
+  exit 1
+fi
+if [ ! -x "$LLAMA_SERVER" ]; then
+  echo "llama-server not executable at: $LLAMA_SERVER (check LLAMA_SERVER in config.sh)"
   exit 1
 fi
 
 # start server
 # note: settings mostly optimized for Raspberry Pi 5
 nice -n 10 \
-  "$LLAMA_SERVER" -m $MODEL \
+  "$LLAMA_SERVER" -m "$MODEL" \
   --cache-type-k f16 --cache-type-v f16 \
   -c $CONTEXT \
   --threads 2 \
   --batch-size 16 \
   --ubatch-size 8 \
-  --port 8080
+  --port $PORT
 
