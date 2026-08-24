@@ -221,7 +221,33 @@ journalctl -u dietpi-autostart_custom.service -b --no-pager | tail -20
 
 Startup order takes care of itself: both servers start in the background and the agent waits for each of them (the LLM client and the RAG retriever each retry for ~30 seconds), so a slow boot is fine. Nothing else on the Pi needs changing — no extra packages, no systemd units, and the embedding server is just a second llama.cpp process.
 
-Two things to expect off-grid: the Pi has no sleep mode, so a voltage dip means a full cold boot (roughly 30–45 seconds including model loading) before the phone answers again, and the RAG index adds a few seconds to that startup while `embeddings.npy` is read from the SD card.
+One thing to expect off-grid: the Pi has no sleep mode, so a voltage dip means a full cold boot before the phone answers again.
+
+### Boot time
+
+Measured on this Pi, roughly 32 seconds from power to picking up the handset:
+
+| Phase | Time | Notes |
+| ----- | ---- | ----- |
+| Kernel + systemd until the autostart script runs | ~5 s | |
+| Python imports | 7.8 s | numpy, onnxruntime and friends |
+| Speech recognition model | 6.9 s | |
+| RAG index load | 1.5 s | 8082 chunks; cheap enough to leave alone |
+| Piper TTS | 2.7 s | |
+| Waiting for the chat server | 3.0 s | |
+| LLM warmup | 4.0 s | makes the first answer fast |
+
+The chat model itself takes ~21 s to load from the SD card, but that happens in parallel with the agent's own startup, so it is not on the critical path — faster storage would not currently help.
+
+**Do not let the boot wait for the network.** DietPi ships with `AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=1`, which makes `dietpi-postboot.service` (and therefore the autostart script) wait for `network-online.target`. On this Pi that cost **42 seconds** on every boot — and off-grid, where no network will ever appear, it is guaranteed to time out in full. The agent needs no network at all: both servers run on localhost. To disable it:
+
+```
+sed -i 's/^AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=1/AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=0/' /boot/dietpi.txt
+mv /etc/systemd/system/dietpi-postboot.service.d/dietpi.conf /etc/systemd/system/dietpi-postboot.service.d/dietpi.conf.disabled
+systemctl daemon-reload
+```
+
+Reverse it by moving the file back and reloading. Check the result with `systemd-analyze critical-chain dietpi-autostart_custom.service`: the service should start around `@5s`, with no `ifup@` unit in the chain. The network still comes up afterwards in the background, so SSH keeps working — just not in the first few seconds.
 
 ## Testing & tuning
 
