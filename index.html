@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OutdoorGPT — Off-grid intelligence, powered by you</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800;900&family=Archivo+Expanded:wght@700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#E9E3D3;--paper-2:#DED7C4;--ink:#1B1E12;--olive:#444E2E;--olive-d:#333A22;
+    --moss:#6B7A45;--blaze:#E85317;--blaze-d:#C7430F;--slate:#6A6553;--line:rgba(27,30,18,.16);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Archivo",system-ui,sans-serif;
+    font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  h1,h2,h3{font-family:"Archivo Expanded","Archivo",sans-serif;line-height:.98;margin:0;letter-spacing:-.01em}
+  .mono{font-family:"Space Mono",monospace}
+  a{color:inherit}
+  ::selection{background:var(--blaze);color:var(--paper)}
+
+  .topo{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5}
+  .topo svg{width:120%;height:120%;position:absolute;left:-10%;top:-10%}
+  .topo path{fill:none;stroke:var(--olive);stroke-width:1;opacity:.16}
+  @media (prefers-reduced-motion:no-preference){.topo svg{animation:drift 80s ease-in-out infinite alternate}}
+  @keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(-3%,2%) scale(1.06)}}
+
+  .wrap{max-width:1140px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  nav{position:sticky;top:0;z-index:50;background:rgba(233,227,211,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{display:flex;align-items:center;gap:10px;font-family:"Archivo Expanded";font-weight:900;font-size:18px;letter-spacing:-.02em}
+  .brand .dot{width:13px;height:13px;border-radius:50%;background:var(--blaze);box-shadow:0 0 0 3px rgba(232,83,23,.22);display:inline-block;animation:blink 2.4s steps(1) infinite}
+  @keyframes blink{0%,80%{opacity:1}90%,100%{opacity:.35}}
+  .nav-links{display:flex;gap:26px;font-size:13px;font-family:"Space Mono";text-transform:uppercase;letter-spacing:.04em}
+  .nav-links a{text-decoration:none;color:var(--slate)}
+  .nav-links a:hover{color:var(--ink)}
+  .btn{display:inline-block;background:var(--blaze);color:var(--paper);text-decoration:none;font-family:"Space Mono";
+    font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;padding:11px 18px;border:0;cursor:pointer;
+    border-radius:2px;transition:background .15s,transform .05s}
+  .btn:hover{background:var(--blaze-d)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+  .btn.ghost:hover{background:var(--ink);color:var(--paper)}
+  @media(max-width:760px){.nav-links{display:none}}
+
+  .hero{padding:64px 0 40px}
+  .eyebrow{font-family:"Space Mono";font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--blaze);margin-bottom:18px}
+  .hero h1{font-size:clamp(40px,7.4vw,86px);font-weight:900;max-width:13ch}
+  .hero h1 .u{color:var(--moss)}
+  .hero p.lede{font-size:clamp(17px,2vw,21px);max-width:48ch;margin:22px 0 30px;color:#2c2f1f}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .hero-cta .note{font-family:"Space Mono";font-size:12px;color:var(--slate)}
+
+  .device{margin:54px auto 0;max-width:820px;position:relative}
+  .device-label{display:flex;justify-content:space-between;align-items:flex-end;font-family:"Space Mono";font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--slate);margin-bottom:10px}
+  .device-label b{color:var(--ink)}
+  .casing{background:linear-gradient(160deg,var(--olive),var(--olive-d));border-radius:26px;padding:18px;
+    box-shadow:0 24px 60px -24px rgba(27,30,18,.55), inset 0 2px 0 rgba(255,255,255,.06);position:relative}
+  .casing::before,.casing::after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%,#9aa376,#2c331c);top:13px}
+  .casing::before{left:13px}.casing::after{right:13px}
+  .bolts-b{position:absolute;bottom:13px;left:0;right:0;display:flex;justify-content:space-between;padding:0 13px;pointer-events:none}
+  .bolts-b i{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#9aa376,#2c331c)}
+  .screen{background:#000;border-radius:12px;padding:10px;overflow:hidden}
+  .screen video{display:block;width:100%;border-radius:6px;background:#0c0c0c}
+  .grip{position:absolute;right:-9px;top:30%;height:40%;width:14px;border-radius:0 8px 8px 0;
+    background:repeating-linear-gradient(180deg,var(--olive-d) 0 6px,var(--olive) 6px 12px)}
+  .grip.orange{background:var(--blaze);right:-9px;top:74%;height:12%}
+
+  section{position:relative;z-index:1}
+  .sec-pad{padding:88px 0}
+  .kicker{font-family:"Space Mono";font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--blaze);margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  .kicker::before{content:"";width:26px;height:2px;background:var(--blaze)}
+  h2.big{font-size:clamp(30px,5vw,54px);font-weight:900;max-width:18ch}
+  .sub{max-width:52ch;color:#2c2f1f;margin-top:16px}
+
+  .crank-sec{background:var(--ink);color:var(--paper)}
+  .crank-sec h2{color:var(--paper)}
+  .crank-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:54px;align-items:center;margin-top:36px}
+  @media(max-width:820px){.crank-grid{grid-template-columns:1fr;gap:36px}}
+  .crank-stage{display:flex;flex-direction:column;align-items:center;gap:22px}
+  .knob-wrap{position:relative;width:190px;height:190px}
+  .knob{width:190px;height:190px;border-radius:50%;cursor:grab;user-select:none;
+    background:radial-gradient(circle at 38% 34%,#5b6738,var(--olive-d));border:6px solid #20260f;
+    box-shadow:0 14px 30px -10px rgba(0,0,0,.7), inset 0 4px 8px rgba(255,255,255,.08);
+    display:flex;align-items:center;justify-content:center;position:relative;touch-action:none}
+  .knob:active{cursor:grabbing}
+  .knob .handle{position:absolute;width:24px;height:74px;background:var(--blaze);border-radius:12px;top:14px;left:50%;
+    margin-left:-12px;transform-origin:50% 81px;box-shadow:0 3px 6px rgba(0,0,0,.4)}
+  .knob .hub{width:42px;height:42px;border-radius:50%;background:#20260f;box-shadow:inset 0 2px 4px rgba(255,255,255,.12)}
+  .gauge{width:100%;max-width:300px}
+  .gauge .bar{height:18px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:3px;overflow:hidden}
+  .gauge .fill{height:100%;width:0;background:linear-gradient(90deg,var(--moss),var(--blaze));transition:width .08s linear}
+  .gauge .readout{display:flex;justify-content:space-between;font-family:"Space Mono";font-size:12px;color:#b9b3a0;margin-top:8px;text-transform:uppercase;letter-spacing:.04em}
+  .hint{font-family:"Space Mono";font-size:12px;color:#8e8975;text-transform:uppercase;letter-spacing:.06em}
+  .answer{background:var(--paper);color:var(--ink);border-radius:8px;padding:22px 24px;min-height:150px;
+    font-family:"Space Mono";font-size:15px;line-height:1.7;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);white-space:pre-wrap}
+  .answer .a-head{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--slate);border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:14px;display:flex;justify-content:space-between}
+  .answer .cursor{display:inline-block;width:8px;height:16px;background:var(--ink);vertical-align:-2px;animation:cur 1s steps(1) infinite}
+  @keyframes cur{50%{opacity:0}}
+
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:46px}
+  @media(max-width:880px){.tiers{grid-template-columns:1fr;max-width:460px;margin-left:auto;margin-right:auto}}
+  .tier{background:var(--paper);border:1.5px solid var(--ink);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+  .tier-vid{aspect-ratio:16/9;background:#000;border-bottom:1.5px solid var(--ink);position:relative}
+  .tier-vid video{width:100%;height:100%;object-fit:cover;display:block}
+  .tier-body{padding:24px;display:flex;flex-direction:column;flex:1}
+  .tier .pwr{font-family:"Space Mono";font-size:11.5px;color:var(--blaze);letter-spacing:.03em}
+  .tier h3{font-size:26px;font-weight:900;margin:8px 0 4px;font-family:"Archivo Expanded"}
+  .tier .role{font-family:"Space Mono";font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--slate);margin-bottom:14px}
+  .tier p{font-size:14.5px;color:#2c2f1f;flex:1;margin:0}
+  .tier .meter{display:flex;gap:4px;margin-top:18px}
+  .tier .meter i{height:8px;flex:1;background:var(--line);border-radius:2px}
+  .tier .meter i.on{background:var(--blaze)}
+  .tier.feat{background:var(--olive);color:var(--paper);border-color:var(--olive)}
+  .tier.feat .tier-vid{border-bottom-color:var(--olive-d)}
+  .tier.feat .role,.tier.feat p{color:#e4dfcd}
+  .tier.feat .meter i{background:rgba(255,255,255,.2)}
+  .tier.feat .meter i.on{background:var(--paper)}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:46px;border-radius:8px;overflow:hidden}
+  @media(max-width:680px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--paper);padding:34px 30px}
+  .card .num{font-family:"Space Mono";font-size:12px;color:var(--blaze);letter-spacing:.05em}
+  .card h3{font-size:22px;font-weight:800;margin:10px 0 12px;font-family:"Archivo Expanded";max-width:18ch}
+  .card p{font-size:15.5px;color:#2c2f1f;margin:0}
+
+  .specs-sec{background:var(--paper-2)}
+  .spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 56px;margin-top:38px;border-top:2px solid var(--ink)}
+  @media(max-width:680px){.spec-grid{grid-template-columns:1fr}}
+  .spec{display:flex;justify-content:space-between;gap:18px;padding:15px 0;border-bottom:1px solid var(--line);font-family:"Space Mono";font-size:14px}
+  .spec .k{color:var(--slate);text-transform:uppercase;letter-spacing:.04em;font-size:12px;padding-top:2px}
+  .spec .v{text-align:right;font-weight:700}
+
+  .faq{margin-top:40px;border-top:1px solid var(--line)}
+  details{border-bottom:1px solid var(--line)}
+  summary{cursor:pointer;list-style:none;padding:22px 0;font-family:"Archivo Expanded";font-weight:800;font-size:20px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+  summary::-webkit-details-marker{display:none}
+  summary .pm{font-family:"Space Mono";color:var(--blaze);font-size:24px;transition:transform .2s}
+  details[open] summary .pm{transform:rotate(45deg)}
+  details p{margin:0 0 22px;max-width:62ch;color:#2c2f1f}
+
+  .cta-sec{background:var(--ink);color:var(--paper);text-align:center}
+  .cta-sec h2{color:var(--paper);margin:0 auto;font-size:clamp(34px,6vw,64px)}
+  .cta-sec p{max-width:46ch;margin:18px auto 30px;color:#cfc9b6}
+  .cta-sec .btn.ghost{color:var(--paper);border-color:var(--paper)}
+  .cta-sec .btn.ghost:hover{background:var(--paper);color:var(--ink)}
+
+  footer{background:var(--olive-d);color:#d8d3c0;padding:46px 0;font-size:14px}
+  .foot-in{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+  footer .mono{font-size:12px;letter-spacing:.04em}
+  footer .disc{color:#a7a48f;max-width:60ch;margin-top:18px;font-size:12.5px;line-height:1.6}
+
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:var(--paper);font-family:"Space Mono";font-size:13px;padding:13px 20px;border-radius:4px;
+    box-shadow:0 16px 40px -12px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.3s;z-index:99;border-left:3px solid var(--blaze)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}.topo svg{animation:none}}
+  :focus-visible{outline:3px solid var(--blaze);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<div class="topo" aria-hidden="true">
+  <svg viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice">
+    <path d="M-50,120 C150,60 330,180 520,120 720,55 880,170 1080,110"/>
+    <path d="M-50,190 C160,130 340,250 520,190 710,128 890,240 1080,180"/>
+    <path d="M-50,270 C170,210 360,330 540,270 720,210 900,320 1080,260"/>
+    <path d="M-50,360 C180,300 380,420 560,360 740,300 920,410 1080,350"/>
+    <path d="M-50,460 C190,400 400,520 580,460 760,400 940,510 1080,450"/>
+    <path d="M-50,560 C200,500 420,620 600,560 780,500 960,610 1080,550"/>
+    <path d="M180,300 C260,280 300,360 360,340 430,318 470,398 540,380"/>
+    <path d="M210,320 C280,304 312,372 366,356 426,338 458,400 520,386"/>
+  </svg>
+</div>
+
+<nav>
+  <div class="wrap nav-in">
+    <div class="brand"><span class="dot"></span>OutdoorGPT</div>
+    <div class="nav-links">
+      <a href="#models">Models</a>
+      <a href="#crank">Why crank</a>
+      <a href="#specs">Field specs</a>
+      <a href="#demo">Demo</a>
+    </div>
+    <a href="#demo" class="btn">Request a field demo</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Off-grid intelligence · fully local · fully private</div>
+    <h1>When the trail ends, the <span class="u">bars</span> end. Your AI doesn't have to.</h1>
+    <p class="lede">OutdoorGPT is a rugged, hand-cranked, fully on-device AI. No signal. No cloud. No subscription. Just you, a crank, and an answer — wherever the map runs out.</p>
+    <div class="hero-cta">
+      <a href="#demo" class="btn">Request a field demo</a>
+      <a href="#crank" class="btn ghost">See how it works</a>
+      <span class="note">No Wi-Fi needed. Works anyway.</span>
+    </div>
+
+    <div class="device reveal">
+      <div class="device-label"><span><b>FIELD FOOTAGE</b> · trail unit, dusk</span><span>REC ●</span></div>
+      <div class="casing">
+        <span class="grip" aria-hidden="true"></span>
+        <span class="grip orange" aria-hidden="true"></span>
+        <div class="screen">
+          <video data-vid="trail" controls muted loop playsinline preload="none"></video>
+        </div>
+        <div class="bolts-b" aria-hidden="true"><i></i><i></i></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="crank-sec sec-pad" id="crank">
+  <div class="wrap">
+    <div class="kicker">Tokens aren't free. They cost calories.</div>
+    <h2 class="big reveal">Generate your own intelligence.</h2>
+    <p class="sub reveal" style="color:#cfc9b6">Every answer starts as kinetic energy. Hold the crank, charge the cell, watch a thought assemble itself. The harder the question, the harder you work.</p>
+    <div class="crank-grid">
+      <div class="answer reveal" id="answerBox">
+        <div class="a-head"><span>OutdoorGPT · Synapse-Trail</span><span id="aPwr">0%</span></div>
+        <div id="answerText">Crank to begin. Output appears here, one hard-won token at a time.<span class="cursor"></span></div>
+      </div>
+      <div class="crank-stage reveal">
+        <div class="knob-wrap">
+          <button class="knob" id="knob" aria-label="Hold to crank and generate power">
+            <span class="handle" id="handle"></span>
+            <span class="hub"></span>
+          </button>
+        </div>
+        <div class="gauge">
+          <div class="bar"><div class="fill" id="fill"></div></div>
+          <div class="readout"><span id="rpm">0 RPM</span><span id="charge">CELL 0%</span></div>
+        </div>
+        <div class="hint" id="hint">↑ Press and hold to crank</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec-pad" id="models">
+  <div class="wrap">
+    <div class="kicker">Rightsized for the backcountry</div>
+    <h2 class="big reveal">From one wrist to a whole rope team.</h2>
+    <p class="sub reveal">A quick question needs one arm. A long night in a cave needs the two of you, taking turns. A glacier in a whiteout needs the whole rope team on the handle. Pick the power your situation can muster.</p>
+    <div class="tiers">
+      <div class="tier reveal">
+        <div class="tier-vid"><video data-vid="trail" muted loop playsinline preload="none" controls></video></div>
+        <div class="tier-body">
+          <div class="pwr">TIER 1 · 20W · HAND-CRANK</div>
+          <h3>Trail</h3>
+          <div class="role">Solo · day-hikers</div>
+          <p>Recipes, knots, plant ID, "is this scat fresh." Everyday backcountry questions answered one wrist at a time — like figuring out dinner while the fire's already going.</p>
+          <div class="meter"><i class="on"></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="tier feat reveal">
+        <div class="tier-vid"><video data-vid="cave" muted loop playsinline preload="none" controls></video></div>
+        <div class="tier-body">
+          <div class="pwr" style="color:var(--paper)">TIER 2 · 0 BARS · AFTER DARK</div>
+          <h3>Nightfall</h3>
+          <div class="role">Two people · one cave</div>
+          <p>Two hundred metres of rock overhead, zero bars, and a long night ahead. Two of you take turns on the crank and ask the only question that matters down here — how do we survive the night? It answers: build a shelter, block the entrance, don't dig straight down. Somewhere in the dark, something hisses.</p>
+          <div class="meter"><i class="on"></i><i class="on"></i><i></i></div>
+        </div>
+      </div>
+      <div class="tier reveal">
+        <div class="tier-vid"><video data-vid="exped" muted loop playsinline preload="none" controls></video></div>
+        <div class="tier-body">
+          <div class="pwr">TIER 3 · 250W · ROPE-TEAM</div>
+          <h3>Expedition</h3>
+          <div class="role">Teams · roped parties</div>
+          <p>Route-finding across the glacier when the whiteout closes in. The whole rope team takes turns at the crank, so nobody has to stop moving to think their way around a crevasse.</p>
+          <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec-pad" style="padding-top:0">
+  <div class="wrap">
+    <div class="kicker">Why people carry it</div>
+    <h2 class="big reveal">Four reasons it earns its weight.</h2>
+    <div class="cards">
+      <div class="card reveal">
+        <div class="num">01 — PRIVACY</div>
+        <h3>Today's forecast: no clouds</h3>
+        <p>Every token is generated on the device, in your hands, on the mountain. Your questions never leave the ridgeline — because there's nowhere for them to go.</p>
+      </div>
+      <div class="card reveal">
+        <div class="num">02 — ENERGY</div>
+        <h3>Burn calories, not propane</h3>
+        <p>Somewhere a gas plant is firing up to answer someone's question. Not yours. Yours costs one granola bar and a sore forearm. The grid stays off.</p>
+      </div>
+      <div class="card reveal">
+        <div class="num">03 — OWNERSHIP</div>
+        <h3>Own every token you turn</h3>
+        <p>Pay once. Generate forever. No monthly fee, no rate limit, no quiet price hike. The only invoice OutdoorGPT sends is your resting heart rate.</p>
+      </div>
+      <div class="card reveal">
+        <div class="num">04 — BUILD</div>
+        <h3>Made for your worst day out</h3>
+        <p>IP68 housing, drop-tested, sunlight-readable e-ink, and a crank you can turn with frozen gloves on. It works when the weather decides not to.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="specs-sec sec-pad" id="specs">
+  <div class="wrap">
+    <div class="kicker">Field specifications</div>
+    <h2 class="big reveal">The numbers, deadpan.</h2>
+    <div class="spec-grid reveal">
+      <div class="spec"><span class="k">Weight</span><span class="v">540 g w/ crank</span></div>
+      <div class="spec"><span class="k">Housing</span><span class="v">IP68 · drop 2 m</span></div>
+      <div class="spec"><span class="k">Screen</span><span class="v">4.2" e-ink, sun-readable</span></div>
+      <div class="spec"><span class="k">Operating temp</span><span class="v">−20 °C to 50 °C</span></div>
+      <div class="spec"><span class="k">Crank ratio</span><span class="v">12:1 · glove-friendly</span></div>
+      <div class="spec"><span class="k">Output</span><span class="v">~38 tokens / 100 cranks</span></div>
+      <div class="spec"><span class="k">Model</span><span class="v">Synapse-Trail (on-device)</span></div>
+      <div class="spec"><span class="k">Connectivity</span><span class="v">none. that's the point.</span></div>
+      <div class="spec"><span class="k">Charge time</span><span class="v">as long as you've got</span></div>
+      <div class="spec"><span class="k">Warranty</span><span class="v">while your arm holds out</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec-pad" style="padding-top:0">
+  <div class="wrap">
+    <div class="kicker">Field questions</div>
+    <h2 class="big reveal">Is this real?</h2>
+    <div class="faq reveal">
+      <details><summary>How much energy does one answer cost?<span class="pm">+</span></summary>
+        <p>About one granola bar and a sore forearm. A data-centre model would quietly pull a few hundred watts off the grid to answer the same question; yours comes straight out of breakfast. Slower, sure — but the only power plant involved is you, and it shuts down the moment you stop cranking.</p></details>
+      <details><summary>How much drinking water does it need for cooling?<span class="pm">+</span></summary>
+        <p>The device: none — it's cooled by whatever weather you're standing in. You: bring plenty. A large model in a warehouse can sip through litres of fresh water per conversation just to keep its chips cool. Out here the entire cooling loop is your own sweat, so the water bill is one swig from your bottle.</p></details>
+      <details><summary>What if I get tired of cranking?<span class="pm">+</span></summary>
+        <p>Then you've learned something useful about how badly you needed the answer. Most questions resolve themselves around the 40% mark.</p></details>
+      <details><summary>Can it call for rescue?<span class="pm">+</span></summary>
+        <p>No. It cannot, and it never will, because it does not exist. Carry a real personal locator beacon or satellite messenger, tell someone your route, and don't trust a website like this one with your safety.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="sec-pad" id="real">
+  <div class="wrap">
+    <div class="kicker">Revealing the real story</div>
+    <h2 class="big reveal">Okay — here's the actual machine.</h2>
+    <p class="sub reveal">Everything above is a deliberate fiction — a polished product that doesn't exist. The point it makes is serious: capable AI doesn't always need the biggest model or a hall full of GPUs. This is a real, hand-cranked, fully offline assistant — a small language model running on a Raspberry Pi, answering real questions with no signal, no cloud and no subscription. It's a love letter to off-grid living, and a small act of faith that local, low-power AI can be more than enough — it just happens to live in a plywood box instead of a drop-tested IP68 shell.</p>
+
+    <div class="device reveal" style="margin-top:40px">
+      <div class="device-label"><span><b>ACTUAL HARDWARE</b> · Raspberry Pi · hand-crank dynamo · voltmeter</span><span>NOT FOR SALE</span></div>
+      <div class="casing">
+        <div class="screen"><img src="assets/real-device.jpg" alt="Inside the OutdoorGPT box: a Raspberry Pi, a hand-crank generator, an analog voltmeter, a speaker and hand-wired electronics in an olive-green wooden case." style="display:block;width:100%;border-radius:6px"></div>
+        <div class="bolts-b" aria-hidden="true"><i></i><i></i></div>
+      </div>
+    </div>
+
+    <div class="cards reveal">
+      <div class="card"><div class="num">HARDWARE &amp; CONCEPT</div><h3>handcrank / CrankGPT</h3><p>The crank, the rotary dial and the whole Raspberry-Pi-in-a-field-phone idea come from <a href="https://squeezlabs.github.io/handcrank/" target="_blank" rel="noopener">Squeez Labs</a>.</p></div>
+      <div class="card"><div class="num">VOICE AGENT</div><h3>edge_voice_agent</h3><p>A fork of <a href="https://github.com/ktomanek/edge_voice_agent" target="_blank" rel="noopener">ktomanek's</a> offline assistant (Apache 2.0): Moonshine for listening, Piper for speaking, llama.cpp for thinking.</p></div>
+      <div class="card"><div class="num">KNOWLEDGE BASE</div><h3>Public-domain manuals</h3><p>Survival, first-aid and camp-cooking guides that are free to redistribute. Selection inspired by the <a href="https://github.com/bdkoeh/survivalRAG" target="_blank" rel="noopener">survivalRAG</a> project.</p></div>
+      <div class="card"><div class="num">THE BUILD</div><h3>Rens van de Schoot &amp; Allard Warrink</h3><p>The wiring, the code, and the questionable decision to make a telephone think. Full source — prompts, RAG pipeline and docs — on GitHub.</p></div>
+    </div>
+
+    <div class="hero-cta reveal" style="margin-top:34px">
+      <a href="https://github.com/Rensvandeschoot/Outdoor-GPT" class="btn" target="_blank" rel="noopener">See the real build on GitHub &rarr;</a>
+      <a href="https://squeezlabs.github.io/handcrank/" class="btn ghost" target="_blank" rel="noopener">The original CrankGPT</a>
+      <span class="note">The only button on this page that actually goes somewhere.</span>
+    </div>
+  </div>
+</section>
+
+<section class="cta-sec sec-pad" id="demo">
+  <div class="wrap">
+    <h2 class="reveal">Get cranking.</h2>
+    <p class="reveal">No Wi-Fi? Dead battery? Three days from the nearest bar of signal? Good. That's exactly where OutdoorGPT was made to think.</p>
+    <a href="#" class="btn ghost" id="demoBtn">Request a field demo</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-in">
+      <div class="brand" style="color:#f0ebd9"><span class="dot"></span>OutdoorGPT</div>
+      <div class="mono">NO CLOUD · NO CLAUDE · NO COVERAGE</div>
+    </div>
+    <p class="disc">© 2026 Trailhead Instruments — a parody, made for fun and for people who like being off-grid. Not a real product, not a safety device, not affiliated with anyone. Always carry proper navigation, communication, and rescue gear in the backcountry. Leave no trace.</p>
+  </div>
+</footer>
+
+<div class="toast" id="toast">There is no demo. There is only the crank.</div>
+
+<script>
+(function(){
+  var MEDIA={trail:{v:"assets/trail.mp4",p:"assets/trail.jpg"},exped:{v:"assets/exped.mp4",p:"assets/exped.jpg"},cave:{v:"assets/cave.mp4",p:"assets/cave.jpg"}};
+  document.querySelectorAll('video[data-vid]').forEach(function(el){
+    var m=MEDIA[el.dataset.vid]; if(m){el.poster=m.p; el.src=m.v;}
+  });
+
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.16});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+
+  /* play videos only while on screen */
+  var vio=new IntersectionObserver(function(es){es.forEach(function(e){
+    var v=e.target;
+    if(e.isIntersecting){var p=v.play();if(p&&p.catch)p.catch(function(){});}else{v.pause();}
+  })},{threshold:.35});
+  document.querySelectorAll('video').forEach(function(v){vio.observe(v)});
+
+  /* crank interaction */
+  var knob=document.getElementById('knob'),handle=document.getElementById('handle'),
+      fill=document.getElementById('fill'),rpmEl=document.getElementById('rpm'),
+      chargeEl=document.getElementById('charge'),aPwr=document.getElementById('aPwr'),
+      answerText=document.getElementById('answerText'),hint=document.getElementById('hint');
+  var charge=0,cranking=false,angle=0,rpm=0,raf=null,last=0,stage=-1;
+  var outputs=[
+    {q:"How do I prepare eggs out here?",a:"Crack two eggs into a hot, oiled pan over the fire. Salt. Don't walk away. They're done before you think they are."},
+    {q:"Which way around the crevasse?",a:"Probe left; the snow bridge ahead sounds hollow. Keep the rope tight and move one at a time. Trust the team more than this readout."},
+    {q:"Is it going to turn?",a:"Wind shifted, clouds dropping onto the ridge. Yes. Get the layers on and the route shortened before you finish reading this."},
+    {q:"Best knot for a ridgeline?",a:"Taut-line hitch at one end so you can tension it, bowline at the other. Practice it twice before it's dark and wet."}
+  ];
+  function pickStage(){var s=Math.min(3,Math.floor(charge/25));if(s!==stage&&s>=0){stage=s;var o=outputs[s];answerText.innerHTML='> '+o.q+'\n\n'+o.a+'<span class="cursor"></span>';}}
+  function loop(ts){
+    if(!last)last=ts;var dt=(ts-last)/1000;last=ts;
+    if(cranking){rpm=Math.min(95,rpm+dt*180);charge=Math.min(100,charge+dt*rpm*0.32);}
+    else{rpm=Math.max(0,rpm-dt*120);charge=Math.max(0,charge-dt*6);}
+    angle+=rpm*dt*6;handle.style.transform='rotate('+angle+'deg)';fill.style.width=charge+'%';
+    var c=Math.round(charge);chargeEl.textContent='CELL '+c+'%';rpmEl.textContent=Math.round(rpm)+' RPM';aPwr.textContent=c+'%';
+    pickStage();
+    if(charge<=0&&rpm<=0&&!cranking){raf=null;last=0;return;}
+    raf=requestAnimationFrame(loop);
+  }
+  function start(e){e.preventDefault();cranking=true;hint.textContent='keep going…';if(!raf){last=0;raf=requestAnimationFrame(loop);}}
+  function stop(){cranking=false;hint.textContent='↑ Press and hold to crank';if(!raf){last=0;raf=requestAnimationFrame(loop);}}
+  knob.addEventListener('mousedown',start);
+  knob.addEventListener('touchstart',start,{passive:false});
+  window.addEventListener('mouseup',stop);
+  window.addEventListener('touchend',stop);
+  knob.addEventListener('keydown',function(e){if(e.key===' '||e.key==='Enter'){start(e);}});
+  knob.addEventListener('keyup',function(e){if(e.key===' '||e.key==='Enter'){stop();}});
+
+  var toast=document.getElementById('toast'),tt;
+  document.getElementById('demoBtn').addEventListener('click',function(e){
+    e.preventDefault();toast.classList.add('show');clearTimeout(tt);
+    tt=setTimeout(function(){toast.classList.remove('show')},2600);
+    document.getElementById('crank').scrollIntoView({behavior:'smooth'});
+  });
+})();
+</script>
+</body>
+</html>
