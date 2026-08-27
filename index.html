@@ -128,6 +128,11 @@
   .card h3{font-size:22px;font-weight:800;margin:10px 0 12px;font-family:"Archivo Expanded";max-width:18ch}
   .card p{font-size:15.5px;color:#2c2f1f;margin:0}
 
+  .reveal-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+  @media(max-width:820px){.reveal-grid{grid-template-columns:1fr;gap:32px}}
+  .reveal-grid .device{margin:0;max-width:none}
+  .reveal-grid .sub{max-width:none}
+
   .specs-sec{background:var(--paper-2)}
   .spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 56px;margin-top:38px;border-top:2px solid var(--ink)}
   @media(max-width:680px){.spec-grid{grid-template-columns:1fr}}
@@ -197,7 +202,7 @@
   <div class="wrap">
     <div class="eyebrow">Off-grid intelligence · fully local · fully private</div>
     <h1>When the trail ends, the <span class="u">bars</span> end. Your AI doesn't have to.</h1>
-    <p class="lede">OutdoorGPT is a rugged, hand-cranked, fully on-device AI. No signal. No cloud. No subscription. Just you, a crank, and an answer — wherever the map runs out.</p>
+    <p class="lede">OutdoorGPT is a rugged, hand-cranked, fully off-grid AI. No signal. No cloud. No subscription. Just you, a crank, and an answer — wherever the map runs out.</p>
     <div class="hero-cta">
       <a href="#demo" class="btn">Request a field demo</a>
       <a href="#crank" class="btn ghost">See how it works</a>
@@ -257,7 +262,7 @@
           <div class="pwr">TIER 1 · 20W · HAND-CRANK</div>
           <h3>Trail</h3>
           <div class="role">Solo · day-hikers</div>
-          <p>Recipes, knots, plant ID, "is this scat fresh." Everyday backcountry questions answered one wrist at a time — like figuring out dinner while the fire's already going.</p>
+          <p>A day's walk in, and dinner is whatever's left in the pack — oats, a bruised apple, one sad square of chocolate. You crank and ask what to make: foil-pack the lot at the fire's edge, five minutes, turn once. Recipes, knots, plant ID, "is this scat fresh" — answered one wrist at a time.</p>
           <div class="meter"><i class="on"></i><i></i><i></i></div>
         </div>
       </div>
@@ -267,7 +272,7 @@
           <div class="pwr" style="color:var(--paper)">TIER 2 · 0 BARS · AFTER DARK</div>
           <h3>Nightfall</h3>
           <div class="role">Two people · one cave</div>
-          <p>Two hundred metres of rock overhead, zero bars, and a long night ahead. Two of you take turns on the crank and ask the only question that matters down here — how do we survive the night? It answers: build a shelter, block the entrance, don't dig straight down. Somewhere in the dark, something hisses.</p>
+          <p>Two hundred metres of rock overhead, zero bars, and a long night ahead. Two of you take turns on the crank and ask the only question that matters down here — how do we survive the night? It answers: build a shelter, block the entrance, don't dig straight down. </p>
           <div class="meter"><i class="on"></i><i class="on"></i><i></i></div>
         </div>
       </div>
@@ -277,7 +282,7 @@
           <div class="pwr">TIER 3 · 250W · ROPE-TEAM</div>
           <h3>Expedition</h3>
           <div class="role">Teams · roped parties</div>
-          <p>Route-finding across the glacier when the whiteout closes in. The whole rope team takes turns at the crank, so nobody has to stop moving to think their way around a crevasse.</p>
+          <p>A whiteout swallows the glacier. The whole rope team takes turns at the crank and asks how you cross a crevasse field blind: keep the rope short and tight, probe before you weight it, hold a compass bearing, one at a time.</p>
           <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i></div>
         </div>
       </div>
@@ -306,9 +311,9 @@
         <p>Pay once. Generate forever. No monthly fee, no rate limit, no quiet price hike. The only invoice OutdoorGPT sends is your resting heart rate.</p>
       </div>
       <div class="card reveal">
-        <div class="num">04 — BUILD</div>
-        <h3>Made for your worst day out</h3>
-        <p>IP68 housing, drop-tested, sunlight-readable e-ink, and a crank you can turn with frozen gloves on. It works when the weather decides not to.</p>
+        <div class="num">04 — CAPABILITY</div>
+        <h3>Capable AI doesn't always need a data centre</h3>
+        <p>A small model on a bare Raspberry Pi, running offline and grounded in real survival manuals. Capable AI was never really about the biggest model — sometimes it just needs to know the right things.</p>
       </div>
     </div>
   </div>
@@ -325,7 +330,7 @@
       <div class="spec"><span class="k">Operating temp</span><span class="v">−20 °C to 50 °C</span></div>
       <div class="spec"><span class="k">Crank ratio</span><span class="v">12:1 · glove-friendly</span></div>
       <div class="spec"><span class="k">Output</span><span class="v">~38 tokens / 100 cranks</span></div>
-      <div class="spec"><span class="k">Model</span><span class="v">Synapse-Trail (on-device)</span></div>
+      <div class="spec"><span class="k">Model</span><span class="v">Synapse-Trail (off-grid)</span></div>
       <div class="spec"><span class="k">Connectivity</span><span class="v">none. that's the point.</span></div>
       <div class="spec"><span class="k">Charge time</span><span class="v">as long as you've got</span></div>
       <div class="spec"><span class="k">Warranty</span><span class="v">while your arm holds out</span></div>
@@ -333,10 +338,10 @@
   </div>
 </section>
 
-<section class="sec-pad" style="padding-top:0">
+<section class="sec-pad">
   <div class="wrap">
     <div class="kicker">Field questions</div>
-    <h2 class="big reveal">Is this real?</h2>
+    <h2 class="big reveal">Q&A</h2>
     <div class="faq reveal">
       <details><summary>How much energy does one answer cost?<span class="pm">+</span></summary>
         <p>About one granola bar and a sore forearm. A data-centre model would quietly pull a few hundred watts off the grid to answer the same question; yours comes straight out of breakfast. Slower, sure — but the only power plant involved is you, and it shuts down the moment you stop cranking.</p></details>
@@ -350,35 +355,6 @@
   </div>
 </section>
 
-<section class="sec-pad" id="real">
-  <div class="wrap">
-    <div class="kicker">Revealing the real story</div>
-    <h2 class="big reveal">Okay — here's the actual machine.</h2>
-    <p class="sub reveal">Everything above is a deliberate fiction — a polished product that doesn't exist. The point it makes is serious: capable AI doesn't always need the biggest model or a hall full of GPUs. This is a real, hand-cranked, fully offline assistant — a small language model running on a Raspberry Pi, answering real questions with no signal, no cloud and no subscription. It's a love letter to off-grid living, and a small act of faith that local, low-power AI can be more than enough — it just happens to live in a plywood box instead of a drop-tested IP68 shell.</p>
-
-    <div class="device reveal" style="margin-top:40px">
-      <div class="device-label"><span><b>ACTUAL HARDWARE</b> · Raspberry Pi · hand-crank dynamo · voltmeter</span><span>NOT FOR SALE</span></div>
-      <div class="casing">
-        <div class="screen"><img src="assets/real-device.jpg" alt="Inside the OutdoorGPT box: a Raspberry Pi, a hand-crank generator, an analog voltmeter, a speaker and hand-wired electronics in an olive-green wooden case." style="display:block;width:100%;border-radius:6px"></div>
-        <div class="bolts-b" aria-hidden="true"><i></i><i></i></div>
-      </div>
-    </div>
-
-    <div class="cards reveal">
-      <div class="card"><div class="num">HARDWARE &amp; CONCEPT</div><h3>handcrank / CrankGPT</h3><p>The crank, the rotary dial and the whole Raspberry-Pi-in-a-field-phone idea come from <a href="https://squeezlabs.github.io/handcrank/" target="_blank" rel="noopener">Squeez Labs</a>.</p></div>
-      <div class="card"><div class="num">VOICE AGENT</div><h3>edge_voice_agent</h3><p>A fork of <a href="https://github.com/ktomanek/edge_voice_agent" target="_blank" rel="noopener">ktomanek's</a> offline assistant (Apache 2.0): Moonshine for listening, Piper for speaking, llama.cpp for thinking.</p></div>
-      <div class="card"><div class="num">KNOWLEDGE BASE</div><h3>Public-domain manuals</h3><p>Survival, first-aid and camp-cooking guides that are free to redistribute. Selection inspired by the <a href="https://github.com/bdkoeh/survivalRAG" target="_blank" rel="noopener">survivalRAG</a> project.</p></div>
-      <div class="card"><div class="num">THE BUILD</div><h3>Rens van de Schoot &amp; Allard Warrink</h3><p>The wiring, the code, and the questionable decision to make a telephone think. Full source — prompts, RAG pipeline and docs — on GitHub.</p></div>
-    </div>
-
-    <div class="hero-cta reveal" style="margin-top:34px">
-      <a href="https://github.com/Rensvandeschoot/Outdoor-GPT" class="btn" target="_blank" rel="noopener">See the real build on GitHub &rarr;</a>
-      <a href="https://squeezlabs.github.io/handcrank/" class="btn ghost" target="_blank" rel="noopener">The original CrankGPT</a>
-      <span class="note">The only button on this page that actually goes somewhere.</span>
-    </div>
-  </div>
-</section>
-
 <section class="cta-sec sec-pad" id="demo">
   <div class="wrap">
     <h2 class="reveal">Get cranking.</h2>
@@ -387,13 +363,45 @@
   </div>
 </section>
 
+<section class="sec-pad" id="real">
+  <div class="wrap">
+    <div class="reveal-grid">
+      <div class="reveal-copy">
+        <div class="kicker">Revealing the real story</div>
+        <h2 class="big reveal">Okay — here's the actual machine.</h2>
+        <p class="sub reveal">Everything above is a deliberate fiction — a polished product that doesn't exist. The point it makes is serious: capable AI doesn't always need the biggest model or a hall full of GPUs. This is a real, hand-cranked, fully offline assistant — a small language model running on a Raspberry Pi, answering real questions with no signal, no cloud and no subscription. It's a love letter to off-grid living, and a small act of faith that local, low-power AI can be more than enough — it just happens to live in a plywood box instead of a drop-tested IP68 shell.</p>
+      </div>
+      <div class="device reveal">
+        <div class="device-label"><span><b>ACTUAL HARDWARE</b> · Raspberry Pi · hand-crank dynamo · voltmeter</span><span>NOT FOR SALE</span></div>
+        <div class="casing">
+          <div class="screen"><img src="assets/real-device.jpg" alt="Inside the OutdoorGPT box: a Raspberry Pi, a hand-crank generator, an analog voltmeter, a speaker and hand-wired electronics in an olive-green wooden case." style="display:block;width:100%;border-radius:6px"></div>
+          <div class="bolts-b" aria-hidden="true"><i></i><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards reveal">
+      <div class="card"><div class="num">HARDWARE &amp; CONCEPT</div><h3>handcrank / CrankGPT</h3><p>The crank, the rotary dial and the whole Raspberry-Pi-in-a-field-phone idea come from <a href="https://squeezlabs.github.io/handcrank/" target="_blank" rel="noopener">Squeez Labs</a>.</p></div>
+      <div class="card"><div class="num">VOICE AGENT</div><h3>edge_voice_agent</h3><p>A fork of <a href="https://github.com/ktomanek/edge_voice_agent" target="_blank" rel="noopener">ktomanek's</a> offline assistant (Apache 2.0): Moonshine for listening, Piper for speaking, llama.cpp for thinking.</p></div>
+      <div class="card"><div class="num">KNOWLEDGE BASE</div><h3>Public-domain manuals</h3><p>Survival, first-aid and camp-cooking guides that are free to redistribute. Selection inspired by the <a href="https://github.com/bdkoeh/survivalRAG" target="_blank" rel="noopener">survivalRAG</a> project.</p></div>
+      <div class="card"><div class="num">THE BUILD</div><h3>Rens &amp; Allard </h3><p>The wiring, the code, and the questionable decision to make a telephone think. Full source — prompts, RAG pipeline and docs — on GitHub.</p></div>
+    </div>
+
+    <div class="hero-cta reveal" style="margin-top:34px">
+      <a href="https://github.com/Rensvandeschoot/Outdoor-GPT" class="btn" target="_blank" rel="noopener">See the real build on GitHub &rarr;</a>
+      <a href="https://squeezlabs.github.io/handcrank/" class="btn ghost" target="_blank" rel="noopener">The original CrankGPT</a>
+      <span class="note">The only buttons on this page that actually go somewhere.</span>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <div class="foot-in">
       <div class="brand" style="color:#f0ebd9"><span class="dot"></span>OutdoorGPT</div>
-      <div class="mono">NO CLOUD · NO CLAUDE · NO COVERAGE</div>
+      <div class="mono">Leave no trace!</div>
     </div>
-    <p class="disc">© 2026 Trailhead Instruments — a parody, made for fun and for people who like being off-grid. Not a real product, not a safety device, not affiliated with anyone. Always carry proper navigation, communication, and rescue gear in the backcountry. Leave no trace.</p>
+    <p class="disc">A parody, made for fun and for people who like being off-grid. Not a real product, not a safety device, not affiliated with anyone. Always carry proper navigation, communication, and rescue gear in the backcountry.</p>
   </div>
 </footer>
 
@@ -423,10 +431,9 @@
       answerText=document.getElementById('answerText'),hint=document.getElementById('hint');
   var charge=0,cranking=false,angle=0,rpm=0,raf=null,last=0,stage=-1;
   var outputs=[
-    {q:"How do I prepare eggs out here?",a:"Crack two eggs into a hot, oiled pan over the fire. Salt. Don't walk away. They're done before you think they are."},
-    {q:"Which way around the crevasse?",a:"Probe left; the snow bridge ahead sounds hollow. Keep the rope tight and move one at a time. Trust the team more than this readout."},
-    {q:"Is it going to turn?",a:"Wind shifted, clouds dropping onto the ridge. Yes. Get the layers on and the route shortened before you finish reading this."},
-    {q:"Best knot for a ridgeline?",a:"Taut-line hitch at one end so you can tension it, bowline at the other. Practice it twice before it's dark and wet."}
+    {q:"I've got oats, a square of chocolate and no pan. Dinner?",a:"Foil-pack it: oats, a splash of water, chocolate broken on top, wrapped tight. Five minutes at the fire's edge, turn once. Breakfast that tastes like dessert — you earned the calories back."},
+    {q:"It's getting dark and we're not getting out tonight.",a:"Stop moving while you can still think. Shelter up, off the cold ground, one light kept burning. Block the entrance, ration the crank, and don't wander off to find the path. Morning does the rest. If something hisses in the dark, it's the wind."},
+    {q:"Can I eat these berries?",a:"Not on my say-so. Rub one on your lip, wait; taste a little, wait longer — the edibility test takes hours for a reason. Hunger is survivable. A lot of berries aren't."}
   ];
   function pickStage(){var s=Math.min(3,Math.floor(charge/25));if(s!==stage&&s>=0){stage=s;var o=outputs[s];answerText.innerHTML='> '+o.q+'\n\n'+o.a+'<span class="cursor"></span>';}}
   function loop(ts){
