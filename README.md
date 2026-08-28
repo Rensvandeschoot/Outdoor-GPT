@@ -146,12 +146,17 @@ The repo is private, so authenticate first — easiest with the [GitHub CLI](htt
 
 ```
 cd /root
-git clone https://github.com/Rensvandeschoot/Outdoor-GPT.git
-cd Outdoor-GPT && ./scripts/install_on_pi.sh
+# clone only what the Pi needs, skipping the website (index.html, assets/, CNAME)
+git clone --filter=blob:none --sparse https://github.com/Rensvandeschoot/Outdoor-GPT.git
+cd Outdoor-GPT
+git sparse-checkout set --no-cone /scripts /prompts.json /rag_index
+./scripts/install_on_pi.sh
 reboot
 ```
 
 `install_on_pi.sh` does the whole job: it checks the prerequisites above, copies the scripts, `prompts.json`, `config.sh` and the built `rag_index/` into the agent directory, downloads the embedding model if it is not already there, installs the boot script over `custom.sh` (with a timestamped backup and a shebang check), and disables the network wait that costs 42 seconds per boot. Anything it cannot safely automate is listed at the end under "Still needs attention" rather than guessed at.
+
+The `--sparse` clone pulls only `scripts/`, `prompts.json` and `rag_index/` — the website files (`index.html`, `assets/`, `CNAME`) live in the same repo but never land on the Pi. A later `git pull` keeps respecting this, so the update command below stays sparse too.
 
 It is safe to re-run, so it doubles as the update path:
 
