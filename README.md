@@ -42,6 +42,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/install_on_pi.sh` | new | One-shot installer/updater for the Pi; also the update path |
 | `scripts/check_gpio.sh` | new | Verifies the rotary dial and interrupt button wiring |
 | `scripts/eink_display.py` | new | Renders a recipe on the optional e-ink screen (recipe mode only) |
+| `scripts/waveshare_epd/` | vendored | Waveshare 7.5" V2 e-ink driver (MIT), with the Pi control pins pre-remapped for this build |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -320,24 +321,26 @@ It is wired to stay out of the way:
 
 **How it fits in the code.** `prompts.json` carries an `"eink": true` flag on the Campfire Recipes prompt; the CLI passes that flag to the agent on the initial prompt and on every dial switch. When a recipe answer finishes in that mode, `scripts/voice_agent.py` hands the text to `scripts/eink_display.py`, which lays it out and draws it. The renderer auto-shrinks the font until the whole recipe fits one 800×480 screen — there is no page two to scroll to without power, which is also why the Campfire Recipes prompt is written to keep recipes short (a title, total time, ≤6 ingredients and ≤6 steps).
 
+**The driver is bundled.** The Waveshare 7.5" V2 driver lives in this repo at [`scripts/waveshare_epd/`](scripts/waveshare_epd) (`epd7in5_V2.py` + `epdconfig.py`, MIT-licensed, from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper)), and `install_on_pi.sh` copies it into the agent directory — so there is nothing to fetch. The **only change from upstream** is the Raspberry Pi control-pin mapping (see the wiring table below); everything else is verbatim.
+
 **Software dependencies** (on the Pi, inside the agent's `venv`):
 
-- **Pillow** — `pip install pillow` (renders the text to an image).
-- **Waveshare e-Paper library** — the `waveshare_epd` Python module. Clone [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper) and put its `RaspberryPi_JetsonNano/python/lib/waveshare_epd` on the Python path (e.g. copy that folder into `/root/edge_voice_agent/`). On a **Raspberry Pi 5**, use a current version of the library: the old `RPi.GPIO` backend does not work on the Pi 5, so `epdconfig` has to use the `gpiozero`/`lgpio` backend.
+- **Pillow** — `pip install pillow` (renders the recipe text to an image).
+- **`gpiozero` + `lgpio` + `spidev`** — the GPIO/SPI backend the driver uses. The bundled `epdconfig` drives the panel through `gpiozero`, which on a **Raspberry Pi 5** needs the `lgpio` backend (`spidev` handles SPI). Install whatever is missing and make sure **SPI is enabled** (`raspi-config` → Interface Options → SPI, or `dtparam=spi=on` in `/boot/config.txt`).
 
-`install_on_pi.sh` reports (non-fatally) whether both are importable, so a re-run tells you if either is still missing.
+`install_on_pi.sh` reports (non-fatally) whether Pillow and the backend libs are importable, so a re-run tells you if anything is still missing.
 
-**Wiring — mind the pin clashes.** The panel talks over SPI, but a few of its *control* pins default to GPIOs that OutdoorGPT already uses. These assignments live in the Waveshare `epdconfig.py`, not in this repo, so remap them there and wire the ribbon to match. BCM numbering:
+**Wiring — the pins are already remapped.** The panel talks over SPI, but three of its *control* pins default to GPIOs that OutdoorGPT already uses, so the bundled `epdconfig.py` moves them to free pins. **Wire the ribbon to the "Ships as" column** (BCM numbering):
 
-| e-Paper pin | Default | Clashes with | Suggested free pin |
-| ----------- | ------- | ------------ | ------------------ |
-| RST | GPIO 17 | rotary position 3 | GPIO 6 |
-| BUSY | GPIO 24 | rotary position 2 | GPIO 5 |
-| PWR *(HAT revisions that have it)* | GPIO 18 | ReSpeaker 2-Mic I2S | GPIO 26 |
-| DC | GPIO 25 | — (free) | keep |
-| CS / MOSI / SCLK | GPIO 8 / 10 / 11 | — (SPI, free) | keep |
+| e-Paper pin | Waveshare default | Clashes with | Ships as → wire here |
+| ----------- | ----------------- | ------------ | -------------------- |
+| RST | GPIO 17 | rotary position 3 | **GPIO 6** |
+| BUSY | GPIO 24 | rotary position 2 | **GPIO 5** |
+| PWR *(HAT revisions that have it)* | GPIO 18 | ReSpeaker 2-Mic I2S | **GPIO 26** |
+| DC | GPIO 25 | — (free) | GPIO 25 (unchanged) |
+| CS / MOSI / SCLK | GPIO 8 / 10 / 11 | — (SPI, free) | unchanged |
 
-Our renderer is pin-agnostic — it only sets the 800×480 geometry — so changing pins is purely a Waveshare-config plus wiring job.
+To use different pins, edit the `RaspberryPi` class at the top of [`scripts/waveshare_epd/epdconfig.py`](scripts/waveshare_epd/epdconfig.py) — that is the only place the mapping lives; our renderer just sets the 800×480 geometry.
 
 **Test it.** First on its own, without the voice stack — this draws the example recipe from the design review:
 
