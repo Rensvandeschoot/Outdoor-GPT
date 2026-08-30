@@ -94,6 +94,16 @@ class EinkRecipeDisplay:
             self._worker = threading.Thread(target=self._drain, daemon=True)
             self._worker.start()
 
+    def render_blocking(self, text):
+        """Render synchronously and RAISE on any error.
+
+        For tests and one-off scripts (see scripts/test_eink.py) where you want
+        to see failures. The live agent uses render_async instead, which is
+        fail-safe and off the hot path.
+        """
+        self._ensure_ready()
+        self._render_now(text)
+
     def clear(self):
         """Blank the panel. Optional; not used by default (see full_reset)."""
         if self._init_failed:
