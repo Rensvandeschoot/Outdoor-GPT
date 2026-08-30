@@ -1,6 +1,6 @@
 # OutdoorGPT
 
-An outdoor assistant living inside an old hand-cranked field telephone. Crank the handle for power, pick one of three assistants with the rotary dial, and talk to an AI through the handset — running fully offline on a Raspberry Pi, with knowledge drawn from real survival manuals.
+A fully off-grid outdoor assistant living inside an old hand-cranked field telephone. Crank the handle for power, pick one of three assistants with the rotary dial, and talk to an AI through the handset — running fully offline on a Raspberry Pi, with knowledge drawn from real survival manuals.
 
 | Dial position | Assistant | What it does |
 | ------------- | --------- | ------------ |
@@ -12,9 +12,9 @@ An outdoor assistant living inside an old hand-cranked field telephone. Crank th
 
 This project builds on the work of others:
 
-- **Hardware & concept**: [handcrank / CrankGPT](https://squeezlabs.github.io/handcrank/) by Squeez Labs — the telephone with the crank, rotary dial and Raspberry Pi.
+- **Hardware & concept**: [handcrank / CrankGPT](https://squeezlabs.github.io/handcrank/) by Squeez Labs — the idea for the crank and rotary dial.
 - **Voice agent**: the code in this repo is a fork of [ktomanek/edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) (Apache 2.0) — an offline voice assistant (speech recognition via Moonshine, speech synthesis via Piper, LLM via llama.cpp). This repo contains **only our additions and modified files**; everything else comes straight from that upstream repo (see [Step 4](#step-4--getting-everything-onto-the-pi)).
-- **Knowledge base**: the documents in `docs/` are public-domain and freely-redistributable survival, first-aid and outdoor-cooking manuals. See [`docs/README.md`](docs/README.md) for the full list of documents, their original sources and licenses. (The selection was inspired by [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG).)
+- **Knowledge base**: The current selection of documents used to train the model was inspired by [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG).)
 
 ## What this repo adds
 
@@ -47,9 +47,9 @@ The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are co
 
 ## Step 1 — Collect documents
 
-Put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/` — one subfolder per source. The documents are committed to this (private) repo, so the Pi gets them with a plain `git clone`; the current collection, with sources and licenses, is listed in [`docs/README.md`](docs/README.md) — only add material that is public domain or freely redistributable. The file `test_document.md` directly in `docs/` is a minimal test: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before indexing a big collection.
+The file `test_document.md` directly in `docs/` is a minimal test: build an index with just that file present and ask the agent *"How do I put out a campfire safely?"* to verify the whole pipeline before indexing a big collection. The documents in the subfolders `docs/` are public-domain and freely-redistributable survival, first-aid and outdoor-cooking manuals. See [`docs/README.md`](docs/README.md) for the full list of documents, their original sources and licenses. 
 
-Two things to keep in mind:
+To create your own pipeline, simply put the documents (PDF, `.txt` or `.md`) in **subfolders** of `docs/`. Two things to keep in mind:
 
 - **English documents work best** — the embedding model and the speech pipeline are tuned for English.
 - **Scanned PDFs** (photos of pages, no selectable text) need OCR first, for example with [ocrmypdf](https://ocrmypdf.readthedocs.io/). The ingest script reports any file it cannot extract text from.
@@ -65,8 +65,6 @@ You only need to do this once.
    ```
 
 2. **llama.cpp** (runs the models). From the [llama.cpp releases page](https://github.com/ggml-org/llama.cpp/releases), download `llama-bXXXXX-bin-win-cpu-x64.zip` and unzip it to `C:\Users\<you>\tools\llama.cpp`.
-
-   > ⚠️ **Antivirus**: Norton (and sometimes Defender) silently quarantines these freshly downloaded executables. If something suddenly stops working and the `.exe` files have vanished, restore them from your antivirus quarantine and add the folder to its exclusions.
 
 3. **Download the embedding model** (~46 MB, goes into `models/embeddings/`):
 
@@ -128,7 +126,7 @@ The Pi runs the full voice agent. This repo contains only our changes, so a work
 
 ### What has to be there first
 
-None of this comes from this repo; it is the CrankGPT phone itself. Easiest is the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), which brings all of it:
+None of this comes from this repo; it is the CrankGPT itself. Easiest is the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), which brings all of it:
 
 | Prerequisite | Checked by the installer |
 | ------------ | ------------------------ |
@@ -142,7 +140,7 @@ None of this comes from this repo; it is the CrankGPT phone itself. Easiest is t
 
 ### Install
 
-The repo is private, so authenticate first — easiest with the [GitHub CLI](https://cli.github.com/) (`apt install gh`, then `gh auth login`), or use a personal access token as the password on HTTPS.
+Then, install:
 
 ```
 cd /root
@@ -154,9 +152,9 @@ git sparse-checkout set --no-cone /scripts /prompts.json /rag_index
 reboot
 ```
 
-`install_on_pi.sh` does the whole job: it checks the prerequisites above, copies the scripts, `prompts.json`, `config.sh` and the built `rag_index/` into the agent directory, downloads the embedding model if it is not already there, installs the boot script over `custom.sh` (with a timestamped backup and a shebang check), and disables the network wait that costs 42 seconds per boot. Anything it cannot safely automate is listed at the end under "Still needs attention" rather than guessed at.
+`install_on_pi.sh` does the whole job: it checks the prerequisites above, copies the scripts, `prompts.json`, `config.sh` and the built `rag_index/` into the agent directory, downloads the embedding model if it is not already there, installs the boot script over `custom.sh` (with a timestamped backup and a shebang check), and disables the network wait that costs 42 seconds per boot. 
 
-The `--sparse` clone pulls only `scripts/`, `prompts.json` and `rag_index/` — the website files (`index.html`, `assets/`, `CNAME`) live in the same repo but never land on the Pi. A later `git pull` keeps respecting this, so the update command below stays sparse too.
+The `--sparse` clone pulls only `scripts/`, `prompts.json` and `rag_index/` — the website files (`index.html`, `assets/`, `CNAME`) live in the same repo but never land on the Pi. 
 
 It is safe to re-run, so it doubles as the update path:
 
@@ -175,15 +173,13 @@ The dial and the button are read by upstream's `gpio_inputs.py` (`RaspberryPi5GP
 | Rotary position 2 → Campfire Recipes | 24 | 18 |
 | Rotary position 3 → Survive the Night | 17 | 11 |
 
-Every line uses an internal pull-up, so a pin reads **high** when idle and is pulled **low** when its contact closes against ground. The dial therefore grounds exactly one of the three position pins at a time.
-
 To check a freshly wired phone:
 
 ```
 cd /root/edge_voice_agent && ./check_gpio.sh
 ```
 
-It prints the four pins live for 20 seconds while you turn the dial and press the button, then reports any pin that never went low — which is exactly the symptom of a wire on the wrong header pin. It reads the GPIO registers directly, so it works fine while the agent is running and it changes nothing. It needs `pinctrl` (from `raspi-utils`, the Pi 5 successor to `raspi-gpio`) or `raspi-gpio` itself; it tells you if neither is installed.
+It prints the four pins live for 20 seconds while you turn the dial and press the button, then reports any pin that never went low — which is exactly the symptom of a wire on the wrong header pin. It needs `pinctrl` (from `raspi-utils`, the Pi 5 successor to `raspi-gpio`) or `raspi-gpio` itself; it tells you if neither is installed.
 
 ### Audio devices
 
@@ -274,8 +270,6 @@ reboot
 
 That `od` line is the shebang check: it must print `#   !   /   b   i   n   /   b   a   s   h  \n`. See the warning below for why.
 
-**Copy the file rather than hand-editing your existing one.** The shebang `#!/bin/bash` has to be the very first line: if anything precedes it — even a single blank line — systemd cannot execute the file and fails at boot with `Exec format error`, so *nothing* starts, in any mode. Hand-merging is exactly how such a blank line sneaks in. Everything device-specific already lives in `config.sh`, so the only line in this script you may need to touch is `AGENT_DIR` at the top.
-
 Check that it worked after rebooting:
 
 ```
@@ -320,8 +314,8 @@ Reverse it by moving the file back and reloading. Check the result with `systemd
   journalctl -u dietpi-autostart_custom.service -b -f
   ```
 
-  Set it back to `0` afterwards — it is noisy. Never hand-edit `custom.sh` to add the flag: that file's shebang must stay on line 1, and hand-editing is exactly how that breaks.
 - **Test without the dial**: with `--enable_keyboard_control`, the keys `g`/`s`/`f` switch to prompt 1/2/3, mirroring the rotary dial.
+  
 - **Knobs**:
 
   | Option | Default | Meaning |
@@ -346,7 +340,3 @@ Symptoms we have actually hit, and what they mean:
 | `chunks.json` has a different checksum on the Pi than on the PC | Harmless: git normalises line endings, so the Windows copy has CRLF and the Pi has LF. The difference in bytes equals the number of lines | Compare `embeddings.npy` instead — that one is binary and must match exactly |
 
 Useful commands: `journalctl -u dietpi-autostart_custom.service -b --no-pager` for the boot itself, `journalctl -u dietpi-autostart_custom.service -b -f` to follow it live (this is where `VERBOSE=1` output lands), and `tail -f /var/log/llama-server.log /var/log/embedding-server.log` for the two servers.
-
-### Known issue
-
-`ifup@eth0.service` takes 42 seconds on this Pi, most likely a DHCP timeout because `eth0` is configured as `auto` while no cable is connected (`ifup@wlan0` needs only 3.4 s). Since the boot no longer waits for the network this costs nothing at startup, but it does mean the wired interface is only usable about 47 seconds after power-on. Diagnose with `journalctl -b -u ifup@eth0.service` and `cat /etc/network/interfaces`.
