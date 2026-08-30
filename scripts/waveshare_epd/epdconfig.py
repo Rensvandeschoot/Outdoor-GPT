@@ -54,13 +54,13 @@ logger = logging.getLogger(__name__)
 
 class RaspberryPi:
     # Pin definition
-    RST_PIN  = 6
-    DC_PIN   = 25
-    CS_PIN   = 8
-    BUSY_PIN = 5
-    PWR_PIN  = 26
-    MOSI_PIN = 10
-    SCLK_PIN = 11
+    RST_PIN  = 17 # GPIO 17/pin 11: initially 6
+    DC_PIN   = 25 # GPIO 25/pin 22: initially 25
+    CS_PIN   = 8 # GPIO 8/pin 24: initially 8
+    BUSY_PIN = 24 # GPIO 24/pin 18: initially 5
+    PWR_PIN  = 18 # GPIO 18/pin 12: initially 26
+    MOSI_PIN = 10 # GPIO 10/pin 19: initially 10
+    SCLK_PIN = 11 # GPIO 11/pin 23: initially 11
 
     def __init__(self):
         import spidev
