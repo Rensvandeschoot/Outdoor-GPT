@@ -59,6 +59,15 @@ for d in moonshine_v1_tiny piper silero_vad; do
     || warn "speech model missing: models/$d (run the upstream download scripts)"
 done
 
+# Optional e-ink recipe screen. Non-fatal on purpose: most builds do not have
+# the panel fitted. See README "Recipe screen (optional e-ink)".
+"$AGENT_DIR/venv/bin/python" -c "import PIL" >/dev/null 2>&1 \
+  && ok "Pillow present (e-ink rendering)" \
+  || note "Pillow not installed - only for the optional e-ink recipe screen (pip install pillow)"
+"$AGENT_DIR/venv/bin/python" -c "import waveshare_epd" >/dev/null 2>&1 \
+  && ok "waveshare_epd present (e-ink driver)" \
+  || note "waveshare_epd not found - only for the optional e-ink recipe screen (see README)"
+
 # ------------------------------------------------------------------ overlay
 echo
 echo "[2/6] Copying our files over the agent"
