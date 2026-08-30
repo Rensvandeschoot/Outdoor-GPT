@@ -149,6 +149,7 @@ def main():
         printer=agent_interaction_handler,
         show_ttfb=args.show_ttfb,
         rag_retriever=rag_retriever,
+        eink_enabled=initial_prompt.get('eink', False),  # recipe mode -> e-ink screen
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
@@ -207,7 +208,8 @@ def main():
             log_file.flush()
         va.full_reset_with_prompt(
             system_prompt=new_prompt['system_prompt'],
-            start_message=new_prompt['start_message']
+            start_message=new_prompt['start_message'],
+            eink_enabled=new_prompt.get('eink', False)  # recipe mode -> e-ink screen
         )
 
     # Setup GPIO interrupt button via gpio_handler

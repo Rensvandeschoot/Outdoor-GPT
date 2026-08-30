@@ -64,12 +64,19 @@ class LLmToAudio:
                  single_turn=False,
                  show_ttfb=False,
                  rag_retriever=None,  # optional rag.RagRetriever for retrieval-augmented answers
+                 eink_enabled=False,  # recipe mode: mirror finished answers to the e-ink screen
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
         self.single_turn = single_turn
         self.show_ttfb = show_ttfb
         self.rag_retriever = rag_retriever
+        # E-ink recipe screen. eink_enabled is flipped per prompt mode (set on the
+        # initial prompt and again on every rotary/keyboard switch). The display
+        # object is created lazily on the first render, so a machine without the
+        # panel or the waveshare library never touches the hardware.
+        self.eink_enabled = eink_enabled
+        self.eink = None
         # TTFB = time from VAD-detected end-of-utterance to first audio played.
         # Set per-turn by VoiceAgent.run() right after get_speech_input() returns.
         self.last_eou_timestamp = None
@@ -567,6 +574,21 @@ class LLmToAudio:
 
     
 
+    def _render_eink(self, text):
+        """Mirror a finished recipe onto the e-ink panel (recipe mode only).
+
+        Lazily creates the display object on first use, then hands the text off.
+        The display module draws in a background thread and swallows any hardware
+        error, so a missing or unplugged panel can never block or crash the agent.
+        """
+        try:
+            if self.eink is None:
+                from eink_display import EinkRecipeDisplay
+                self.eink = EinkRecipeDisplay(verbose=self.verbose)
+            self.eink.render_async(text)
+        except Exception as e:
+            self._info(f">> e-ink render skipped: {e}")
+
     def process_prompt(self, user_prompt):
         """Process a prompt through LLM and stream to Piper."""
 
@@ -640,6 +662,7 @@ class LLmToAudio:
             **extra_params
         )
         text_chunks = []
+        raw_chunks = []  # unmodified LLM text (keeps newlines) for the e-ink screen
         for chunk in llm_response_stream:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
@@ -650,11 +673,12 @@ class LLmToAudio:
                 break
 
             if chunk.choices and chunk.choices[0].delta.content:
-                text_chunk = chunk.choices[0].delta.content
+                raw_chunk = chunk.choices[0].delta.content
+                raw_chunks.append(raw_chunk)  # keep the original text for the screen
                 self.assistant_printer.show_idle()
 
                 # remove asterisks and other formatting info from the text
-                text_chunk = self._clean_llm_output(text_chunk)
+                text_chunk = self._clean_llm_output(raw_chunk)
 
                 self._process_text_chunk(text_chunk)            
                 text_chunks.append(text_chunk)
@@ -668,6 +692,16 @@ class LLmToAudio:
         if self.interrupt_event.is_set():
             self._info(">> Interrupted, skipping finish processing")
             return
+
+        # Recipe mode only: mirror the finished recipe onto the e-ink panel so it
+        # can be read hands-free while cooking. The panel is bistable, so the
+        # recipe stays on screen with the power off. Non-blocking and fail-safe.
+        # Skipped for the other prompt modes (eink_enabled is False) and for a
+        # one-line clarifying reply (no newline -> not an actual recipe).
+        if getattr(self, 'eink_enabled', False):
+            recipe_text = ''.join(raw_chunks)
+            if recipe_text.strip() and '\n' in recipe_text:
+                self._render_eink(recipe_text)
 
         # Process any remaining text
         self._finish_processing()
@@ -1182,9 +1216,16 @@ class VoiceAgent():
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
 
-    def full_reset_with_prompt(self, system_prompt=None, start_message=None):
+    def full_reset_with_prompt(self, system_prompt=None, start_message=None, eink_enabled=None):
         """Full reset with optional new system prompt and start message."""
         self._info("Full reset requested")
+
+        # Turn the e-ink recipe screen on/off with the mode. We deliberately do
+        # NOT clear the panel here: it is bistable, so the last recipe stays
+        # readable after switching to another mode. A fresh recipe-mode session
+        # simply shows nothing until the first recipe answer is generated.
+        if eink_enabled is not None and hasattr(self, 'output_handler'):
+            self.output_handler.eink_enabled = eink_enabled
 
         self.input_handler.acquire_stream_lock()
         try:
