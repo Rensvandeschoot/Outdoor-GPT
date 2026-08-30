@@ -2,15 +2,20 @@
 # Vendored for OutdoorGPT from Waveshare's e-Paper library
 #   https://github.com/waveshareteam/e-Paper  (MIT, see the notice below)
 #
-# The ONLY change from upstream is the Raspberry Pi control-pin mapping.
-# The defaults (RST 17, BUSY 24, PWR 18) collide with OutdoorGPT's rotary
-# dial (GPIO 17 and 24) and the ReSpeaker 2-Mic I2S audio (GPIO 18), so the
-# RaspberryPi backend below uses free pins instead:
-#     RST  17 -> 6
-#     BUSY 24 -> 5
-#     PWR  18 -> 26
-# DC (25), CS (8) and the hardware SPI pins (MOSI 10, SCLK 11) are unchanged.
-# Wire the panel's ribbon to match these pins. Nothing else was modified.
+# Two changes from upstream, both in the RaspberryPi backend below:
+#
+# 1. Control-pin mapping. The defaults (RST 17, BUSY 24, PWR 18) collide with
+#    OutdoorGPT's rotary dial (GPIO 17 and 24) and the ReSpeaker 2-Mic I2S
+#    audio (GPIO 18), so we use free pins instead:
+#        RST  17 -> 6
+#        BUSY 24 -> 5
+#        PWR  18 -> 26
+#    DC (25), CS (8) and the hardware SPI pins (MOSI 10, SCLK 11) are unchanged.
+#    Wire the panel's ribbon to match these pins.
+#
+# 2. SPI-bus auto-detect in module_init(). The header SPI0 is /dev/spidev0.0 on
+#    a Pi 4 but /dev/spidev10.0 on a Pi 5 (RP1), so we open whichever exists
+#    instead of hard-coding bus 0. Override with the OUTDOORGPT_SPI_BUS env var.
 # ==========================================================================
 # /*****************************************************************************
 # * | File        :	  epdconfig.py
@@ -153,8 +158,19 @@ class RaspberryPi:
             self.DEV_SPI.DEV_Module_Init()
 
         else:
-            # SPI device, bus = 0, device = 0
-            self.SPI.open(0, 0)
+            # Header SPI0 is /dev/spidev0.0 on a Pi 4, but /dev/spidev10.0 on a
+            # Pi 5 (RP1). Open whichever bus actually exists so both boards work;
+            # OUTDOORGPT_SPI_BUS overrides the choice if ever needed.
+            import glob
+            bus_env = os.environ.get('OUTDOORGPT_SPI_BUS')
+            if bus_env and bus_env.strip():
+                spi_bus = int(bus_env)
+            elif os.path.exists('/dev/spidev0.0'):
+                spi_bus = 0
+            else:
+                nodes = sorted(glob.glob('/dev/spidev*.0'))
+                spi_bus = int(nodes[0].split('spidev')[1].split('.', 1)[0]) if nodes else 0
+            self.SPI.open(spi_bus, 0)
             self.SPI.max_speed_hz = 4000000
             self.SPI.mode = 0b00
         return 0
