@@ -60,13 +60,17 @@ for d in moonshine_v1_tiny piper silero_vad; do
 done
 
 # Optional e-ink recipe screen. Non-fatal on purpose: most builds do not have
-# the panel fitted. See README "Recipe screen (optional e-ink)".
+# the panel fitted. The driver itself is bundled (scripts/waveshare_epd, copied
+# in step [2/6]); these are only the extra Python libs it needs at runtime.
+# See README "Recipe screen (optional e-ink)".
 "$AGENT_DIR/venv/bin/python" -c "import PIL" >/dev/null 2>&1 \
   && ok "Pillow present (e-ink rendering)" \
-  || note "Pillow not installed - only for the optional e-ink recipe screen (pip install pillow)"
-"$AGENT_DIR/venv/bin/python" -c "import waveshare_epd" >/dev/null 2>&1 \
-  && ok "waveshare_epd present (e-ink driver)" \
-  || note "waveshare_epd not found - only for the optional e-ink recipe screen (see README)"
+  || note "Pillow missing - only for the optional e-ink screen (pip install pillow)"
+for m in gpiozero spidev lgpio; do
+  "$AGENT_DIR/venv/bin/python" -c "import $m" >/dev/null 2>&1 \
+    && ok "$m present (e-ink GPIO/SPI backend)" \
+    || note "$m missing - only for the optional e-ink screen (Pi 5 needs gpiozero+lgpio+SPI)"
+done
 
 # ------------------------------------------------------------------ overlay
 echo
@@ -76,6 +80,14 @@ cp "$REPO"/scripts/*.py "$REPO"/scripts/*.sh "$REPO"/prompts.json "$AGENT_DIR/" 
 cp "$REPO/scripts/config.sh" "$AGENT_DIR/" || die "copy of config.sh failed"
 chmod +x "$AGENT_DIR"/start_*.sh "$AGENT_DIR"/download_embedding_model.sh "$AGENT_DIR"/startup_script.sh
 ok "scripts, prompts.json and config.sh"
+
+# Bundled e-ink driver (optional hardware). Copy its contents idempotently so a
+# re-run refreshes the files in place instead of nesting waveshare_epd/waveshare_epd.
+if [ -d "$REPO/scripts/waveshare_epd" ]; then
+  mkdir -p "$AGENT_DIR/waveshare_epd"
+  cp -r "$REPO/scripts/waveshare_epd/." "$AGENT_DIR/waveshare_epd/" || die "copy of waveshare_epd failed"
+  ok "bundled e-ink driver (waveshare_epd)"
+fi
 
 if [ -d "$REPO/rag_index" ]; then
   cp -r "$REPO/rag_index" "$AGENT_DIR/" || die "copy of rag_index failed"
