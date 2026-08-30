@@ -342,14 +342,24 @@ It is wired to stay out of the way:
 
 To use different pins, edit the `RaspberryPi` class at the top of [`scripts/waveshare_epd/epdconfig.py`](scripts/waveshare_epd/epdconfig.py) — that is the only place the mapping lives; our renderer just sets the 800×480 geometry.
 
-**Test it.** First on its own, without the voice stack — this draws the example recipe from the design review:
+**Test it — hardware first.** `scripts/test_eink.py` draws one page straight to the panel, with no dial, microphone, model or servers involved — so it works even with the rotary dial disconnected:
 
 ```bash
 cd /root/edge_voice_agent && source venv/bin/activate
-python eink_display.py
+python test_eink.py                 # a sample recipe
+python test_eink.py --doc           # the campfire-safety text from docs/test_document
+python test_eink.py --file <path>   # any text or markdown file
 ```
 
-Then end-to-end: dial to position 2 and ask for a recipe. It should be spoken *and* appear on the screen a few seconds later.
+On success the page stays on the panel with the power off; on failure the script prints the full error and a wiring checklist (3.3V, RST/BUSY/PWR on 6/5/26, SPI enabled, deps).
+
+**Then end-to-end.** Once the panel works, test the whole chain. If the position-2 dial is wired, turn to it and ask for a recipe. If that dial is disconnected (or you just want to force recipe mode), start the agent with keyboard control and press `s` — the `g`/`s`/`f` keys mirror dial positions 1/2/3, no dial needed:
+
+```bash
+python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index rag_index --enable_keyboard_control
+```
+
+The recipe should be spoken *and* appear on the screen a few seconds later.
 
 ## Testing & tuning
 
