@@ -29,11 +29,11 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 
 | File | New/modified | Purpose |
 | ---- | ------------ | ------- |
-| `prompts.json` | modified | The three prompts behind the rotary dial |
+| `prompts.json` | modified | The three prompts behind the rotary dial (with the `eink` flag on Campfire Recipes) |
 | `scripts/rag_ingest.py` | new | Turns documents into the search index (chunks + embeddings) |
 | `scripts/rag.py` | new | Looks up the relevant chunks during a conversation |
 | `scripts/rag_test.py` | new | Sanity-checks a built index with test questions |
-| `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration + the `--rag_index` options |
+| `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration, the `--rag_index` options, and the recipe→e-ink hook |
 | `scripts/download_embedding_model.sh` / `.ps1` | new | Fetches the embedding model (Pi / Windows) |
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
@@ -41,6 +41,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/config.sh` | new | Per-device paths and settings, sourced by the shell scripts |
 | `scripts/install_on_pi.sh` | new | One-shot installer/updater for the Pi; also the update path |
 | `scripts/check_gpio.sh` | new | Verifies the rotary dial and interrupt button wiring |
+| `scripts/eink_display.py` | new | Renders a recipe on the optional e-ink screen (recipe mode only) |
 
 The source documents (`docs/`) and the built index (`rag_index/`, ~20 MB) are committed as well, so a single clone brings everything the Pi needs except the model files.
 
@@ -305,6 +306,47 @@ systemctl daemon-reload
 ```
 
 Reverse it by moving the file back and reloading. Check the result with `systemd-analyze critical-chain dietpi-autostart_custom.service`: the service should start around `@5s`, with no `ifup@` unit in the chain. The network still comes up afterwards in the background, so SSH keeps working — just not in the first few seconds.
+
+## Recipe screen (optional e-ink)
+
+An optional [Waveshare 7.5" e-Paper HAT](https://www.waveshare.com/7.5inch-e-paper-hat.htm) (800×480, black/white) turns the recipe assistant into a hands-free cookbook: ask for a recipe on **dial position 2 (Campfire Recipes)** and, on top of speaking it, the phone prints the whole recipe on the screen so you don't have to keep cranking for a re-read. E-ink is *bistable* — it holds the last image with the power completely off — so the recipe stays up even after the cell runs flat.
+
+It is wired to stay out of the way:
+
+- **Recipe mode only.** Outdoor Tips and Survive the Night never touch the screen. The rotary dial *is* the switch, so no extra button is needed.
+- **Blank until there's something to show.** Entering recipe mode leaves the screen as it was; it only draws once a recipe has actually been generated. A one-line clarifying reply ("what have you got?") is not drawn.
+- **The last recipe stays.** Turning the dial away from recipes does not clear the panel — the recipe you cooked from is still there.
+- **Fail-safe.** If the panel is missing, unplugged, or the driver isn't installed, drawing is skipped silently and the voice agent runs exactly as before. It also runs in a background thread, so the ~6 s e-ink refresh never holds up the conversation.
+
+**How it fits in the code.** `prompts.json` carries an `"eink": true` flag on the Campfire Recipes prompt; the CLI passes that flag to the agent on the initial prompt and on every dial switch. When a recipe answer finishes in that mode, `scripts/voice_agent.py` hands the text to `scripts/eink_display.py`, which lays it out and draws it. The renderer auto-shrinks the font until the whole recipe fits one 800×480 screen — there is no page two to scroll to without power, which is also why the Campfire Recipes prompt is written to keep recipes short (a title, total time, ≤6 ingredients and ≤6 steps).
+
+**Software dependencies** (on the Pi, inside the agent's `venv`):
+
+- **Pillow** — `pip install pillow` (renders the text to an image).
+- **Waveshare e-Paper library** — the `waveshare_epd` Python module. Clone [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper) and put its `RaspberryPi_JetsonNano/python/lib/waveshare_epd` on the Python path (e.g. copy that folder into `/root/edge_voice_agent/`). On a **Raspberry Pi 5**, use a current version of the library: the old `RPi.GPIO` backend does not work on the Pi 5, so `epdconfig` has to use the `gpiozero`/`lgpio` backend.
+
+`install_on_pi.sh` reports (non-fatally) whether both are importable, so a re-run tells you if either is still missing.
+
+**Wiring — mind the pin clashes.** The panel talks over SPI, but a few of its *control* pins default to GPIOs that OutdoorGPT already uses. These assignments live in the Waveshare `epdconfig.py`, not in this repo, so remap them there and wire the ribbon to match. BCM numbering:
+
+| e-Paper pin | Default | Clashes with | Suggested free pin |
+| ----------- | ------- | ------------ | ------------------ |
+| RST | GPIO 17 | rotary position 3 | GPIO 6 |
+| BUSY | GPIO 24 | rotary position 2 | GPIO 5 |
+| PWR *(HAT revisions that have it)* | GPIO 18 | ReSpeaker 2-Mic I2S | GPIO 26 |
+| DC | GPIO 25 | — (free) | keep |
+| CS / MOSI / SCLK | GPIO 8 / 10 / 11 | — (SPI, free) | keep |
+
+Our renderer is pin-agnostic — it only sets the 800×480 geometry — so changing pins is purely a Waveshare-config plus wiring job.
+
+**Test it.** First on its own, without the voice stack — this draws the example recipe from the design review:
+
+```bash
+cd /root/edge_voice_agent && source venv/bin/activate
+python eink_display.py
+```
+
+Then end-to-end: dial to position 2 and ask for a recipe. It should be spoken *and* appear on the screen a few seconds later.
 
 ## Testing & tuning
 
