@@ -71,6 +71,15 @@ for m in gpiozero spidev lgpio; do
     && ok "$m present (e-ink GPIO/SPI backend)" \
     || note "$m missing - only for the optional e-ink screen (Pi 5 needs gpiozero+lgpio+SPI)"
 done
+# The libs are useless without the SPI bus itself: DietPi ships with SPI off,
+# and then no /dev/spidev node exists at all and the panel cannot be opened.
+SPIDEV=$(ls /dev/spidev*.0 2>/dev/null | head -1)
+if [ -n "$SPIDEV" ]; then
+  ok "SPI enabled ($SPIDEV)"
+else
+  note "no /dev/spidev* - SPI is disabled. Only needed for the e-ink screen."
+  note "  enable with: dietpi-config > Advanced Options > SPI state, then reboot"
+fi
 
 # ------------------------------------------------------------------ overlay
 echo
