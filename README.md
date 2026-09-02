@@ -6,7 +6,9 @@ A fully off-grid outdoor assistant living inside an old hand-cranked field telep
 | ------------- | --------- | ------------ |
 | 1 | **Outdoor Tips** | Questions about hiking, camping, gear, navigation |
 | 2 | **Campfire Recipes** | Turns your ingredients into a campfire recipe |
-| 3 | **Survive the Night** | Step-by-step help for an unexpected night outdoors |
+| 3 | **Survive the Night** | Step-by-step help how to survive the night |
+
+If you came here from the website [OutdoorGPT.ai](www.outdoorGPT.ai): this is the part that was never fiction. What follows is the actual build — the pipeline end to end, the experiments and tests, and the many small adjustments our failures argued us into.
 
 ## Origin & credits
 
@@ -14,14 +16,14 @@ This project builds on the work of others:
 
 - **Hardware & concept**: [handcrank / CrankGPT](https://squeezlabs.github.io/handcrank/) by Squeez Labs — the idea for the crank and rotary dial.
 - **Voice agent**: the code in this repo is a fork of [ktomanek/edge_voice_agent](https://github.com/ktomanek/edge_voice_agent) (Apache 2.0) — an offline voice assistant (speech recognition via Moonshine, speech synthesis via Piper, LLM via llama.cpp). This repo contains **only our additions and modified files**; everything else comes straight from that upstream repo (see [Step 4](#step-4--getting-everything-onto-the-pi)).
-- **Knowledge base**: The current selection of documents used to train the model was inspired by [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG).)
+- **Knowledge base**: The current selection of documents used to train the model was inspired by [bdkoeh/survivalRAG](https://github.com/bdkoeh/survivalRAG).
 
 ## What this repo adds
 
 The stock edge_voice_agent answers purely from the language model itself. We add two things:
 
 1. **Three outdoor prompts** behind the rotary dial (`prompts.json` in the repo root — edit this file to change what the assistants do).
-2. **RAG** (Retrieval-Augmented Generation): the documents in `docs/` are cut into small pieces of text ("chunks") and converted into vectors ("embeddings") stored on the SD card. For every spoken question, the Pi looks up the best-matching pieces and hands them to the language model as context. This lets a small offline model give answers grounded in the actual manuals.
+2. **RAG** (Retrieval-Augmented Generation): the documents in `docs/` are cut into chunks and converted into embeddings stored on the SD card. For every spoken question, the system looks up the best-matching pieces and hands them to the language model as context. This lets a small offline model give answers grounded in the actual manuals.
 
 ### Repository layout
 
@@ -29,11 +31,11 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 
 | File | New/modified | Purpose |
 | ---- | ------------ | ------- |
-| `prompts.json` | modified | The three prompts behind the rotary dial (with the `eink` flag on Campfire Recipes) |
+| `prompts.json` | modified | The three prompts behind the rotary dial (with an `eink` flag on Campfire Recipes to print the recipi on an e-inkt screen) |
 | `scripts/rag_ingest.py` | new | Turns documents into the search index (chunks + embeddings) |
 | `scripts/rag.py` | new | Looks up the relevant chunks during a conversation |
 | `scripts/rag_test.py` | new | Sanity-checks a built index with test questions |
-| `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration, the `--rag_index` options, and the recipe→e-ink hook |
+| `scripts/voice_agent.py`, `voice_agent_cli.py`, `voice_agent_utils.py` | modified | RAG integration with the `--rag_index` options |
 | `scripts/download_embedding_model.sh` / `.ps1` | new | Fetches the embedding model (Pi / Windows) |
 | `scripts/start_embedding_server.sh` / `.ps1` | new | Starts the embedding server (Pi / Windows) |
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
@@ -122,13 +124,9 @@ You can stop the embedding server now (Ctrl+C in terminal 1).
 
 ## Step 4 — Getting everything onto the Pi
 
-The Pi runs the full voice agent. This repo contains only our changes, so a working stock setup has to exist first; the installer then puts our layer on top of it.
-
-> **Paths**: DietPi runs everything as `root`, the agent lives in `/root/edge_voice_agent` and its virtualenv is `venv`. If your Pi differs, check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths — and put them in `scripts/config.sh` (see [Device configuration](#device-configuration)).
-
 ### What has to be there first
 
-None of this comes from this repo; it is the CrankGPT itself. Easiest is the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), which brings all of it:
+A working stock setup of the voice agent has to exist first; the installer then puts our layer on top of it. The easiest is the [CrankGPT DIY image](https://github.com/squeezlabs/crankgpt_diy), which brings all of it:
 
 | Prerequisite | Checked by the installer |
 | ------------ | ------------------------ |
@@ -140,9 +138,12 @@ None of this comes from this repo; it is the CrankGPT itself. Easiest is the [Cr
 | Its models: a chat model plus `moonshine_v1_tiny`, `piper`, `silero_vad` | yes, warns if missing |
 | DietPi autostart set to "Custom script" (index 14) | yes, warns if not |
 
-### Install
 
-Then, install:
+> **Paths**: DietPi runs everything as `root`, the agent lives in `/root/edge_voice_agent` and its virtualenv is `venv`. If your Pi differs, check your existing `/var/lib/dietpi/dietpi-autostart/custom.sh` — it names the real paths — and put them in `scripts/config.sh` (see [Device configuration](#device-configuration)).
+
+### Install the updated pipeline
+
+Install:
 
 ```
 cd /root
@@ -175,7 +176,7 @@ The dial and the button are read by upstream's `gpio_inputs.py` (`RaspberryPi5GP
 | Rotary position 2 → Campfire Recipes | 24 | 18 |
 | Rotary position 3 → Survive the Night | 17 | 11 |
 
-To check a freshly wired phone:
+To check a freshly wired set-up:
 
 ```
 cd /root/edge_voice_agent && ./check_gpio.sh
@@ -202,11 +203,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
-One setting deliberately lives outside this file: `AGENT_DIR` at the top of `startup_script.sh` (`/root/edge_voice_agent`), because that script has to know where to find `config.sh` before it can read it.
-
-Moving to another device means editing this one file. The server scripts still accept arguments, which override the config.
-
-`config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. For anything permanent, change it in the repo and push.
+`config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. 
 
 ## Step 5 — Running it on the Pi
 
@@ -314,14 +311,16 @@ An optional [Waveshare 7.5" e-Paper HAT](https://www.waveshare.com/7.5inch-e-pap
 
 It is wired to stay out of the way:
 
-- **Recipe mode only.** Outdoor Tips and Survive the Night never touch the screen. The rotary dial *is* the switch, so no extra button is needed.
-- **Blank until there's something to show.** Entering recipe mode leaves the screen as it was; it only draws once a recipe has actually been generated. A one-line clarifying reply ("what have you got?") is not drawn.
+- **Recipe mode only.** Outdoor Tips and Survive the Night never touch the screen.
+- **Blank until there's something to show.** Entering recipe mode leaves the screen as it was; it only draws once a recipe has actually been generated.
 - **The last recipe stays.** Turning the dial away from recipes does not clear the panel — the recipe you cooked from is still there.
 - **Fail-safe.** If the panel is missing, unplugged, or the driver isn't installed, drawing is skipped silently and the voice agent runs exactly as before. It also runs in a background thread, so the ~6 s e-ink refresh never holds up the conversation.
 
 **How it fits in the code.** `prompts.json` carries an `"eink": true` flag on the Campfire Recipes prompt; the CLI passes that flag to the agent on the initial prompt and on every dial switch. When a recipe answer finishes in that mode, `scripts/voice_agent.py` hands the text to `scripts/eink_display.py`, which lays it out and draws it. The renderer auto-shrinks the font until the whole recipe fits one 800×480 screen — there is no page two to scroll to without power, which is also why the Campfire Recipes prompt is written to keep recipes short (a title, total time, ≤6 ingredients and ≤6 steps).
 
-**The driver is bundled.** The Waveshare 7.5" V2 driver lives in this repo at [`scripts/waveshare_epd/`](scripts/waveshare_epd) (`epd7in5_V2.py` + `epdconfig.py`, MIT-licensed, from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper)), and `install_on_pi.sh` copies it into the agent directory — so there is nothing to fetch. Two small changes from upstream, both in the `RaspberryPi` backend of `epdconfig.py`: the control-pin mapping (see the wiring table below), and a guard on the SPI bus — the driver requires `/dev/spidev0.0`, the 40-pin header bus, and raises a readable error instead of quietly opening the wrong controller (override with `OUTDOORGPT_SPI_BUS`). Everything else is verbatim.
+**The driver is bundled.** The Waveshare 7.5" V2 driver lives in this repo at [`scripts/waveshare_epd/`](scripts/waveshare_epd) (`epd7in5_V2.py` + `epdconfig.py`, MIT-licensed, from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper)), and `install_on_pi.sh` copies it into the agent directory — so there is nothing to fetch. 
+
+Two small changes from upstream, both in the `RaspberryPi` backend of `epdconfig.py`: the control-pin mapping (see the wiring table below), and a guard on the SPI bus — the driver requires `/dev/spidev0.0`, the 40-pin header bus, and raises a readable error instead of quietly opening the wrong controller (override with `OUTDOORGPT_SPI_BUS`). Everything else is verbatim.
 
 **Software dependencies** (on the Pi, inside the agent's `venv`):
 
@@ -395,3 +394,19 @@ Symptoms we have actually hit, and what they mean:
 | `chunks.json` has a different checksum on the Pi than on the PC | Harmless: git normalises line endings, so the Windows copy has CRLF and the Pi has LF. The difference in bytes equals the number of lines | Compare `embeddings.npy` instead — that one is binary and must match exactly |
 
 Useful commands: `journalctl -u dietpi-autostart_custom.service -b --no-pager` for the boot itself, `journalctl -u dietpi-autostart_custom.service -b -f` to follow it live (this is where `VERBOSE=1` output lands), and `tail -f /var/log/llama-server.log /var/log/embedding-server.log` for the two servers.
+
+## Contact
+
+**[Rens](@Rensvandeschoot) & [Allard](@allardw)** — the wiring, the code, and the questionable decision to make a telephone think.
+[rens@fwdfaster.ai](mailto:rens@fwdfaster.ai) · [github.com/Rensvandeschoot](https://github.com/Rensvandeschoot) · the story lives in [`index.html`](index.html)
+
+We built this to start a conversation and to use in our lectures, so: argue with us about where capable AI is really headed, borrow it for your own classroom, or build one yourself. If a step above only worked because of something undocumented on our Pi, tell us — that is exactly the sort of thing this README is trying to save you from. If you are better in hardware or PI installations, send us your GitHub repo and we're happy to inject your improvement!
+
+## License
+
+The code in this repository is licensed under the Apache License 2.0 — see [LICENSE](LICENSE). A few parts carry their own terms:
+
+- **`scripts/waveshare_epd/`** — MIT, vendored from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper) with two documented changes.
+- **The voice agent it forks** — Apache 2.0, [ktomanek/edge_voice_agent](https://github.com/ktomanek/edge_voice_agent).
+- **The documents in `docs/`** — public domain or freely redistributable, one licence per source; the full list is in [`docs/README.md`](docs/README.md).
+- **The models** — not redistributed here; the scripts download them from their original sources, and each has its own licence. Worth knowing: LFM2.5 uses the [LFM Open License](https://www.liquid.ai/lfm-license) (free commercial use only below $10M annual revenue), all-MiniLM-L6-v2 is Apache 2.0, Moonshine and Silero VAD are MIT, and each Piper voice carries the licence of its training data.
