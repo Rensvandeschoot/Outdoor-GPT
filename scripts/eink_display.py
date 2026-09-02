@@ -28,9 +28,27 @@ Requires, on the Pi only:
 import os
 import threading
 
-# Panel geometry (Waveshare 7.5" V2).
+# Panel geometry (Waveshare 7.5" V2). The physical panel buffer is ALWAYS
+# 800x480 (landscape) -- the driver has no concept of orientation. To show
+# portrait text we render onto a rotated canvas and rotate the finished
+# image back before handing it to the driver.
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
+
+# "landscape" -> render straight onto an 800x480 canvas (original behaviour).
+# "portrait"  -> render onto a 480x800 canvas, then rotate into the 800x480
+#                buffer the panel expects.
+ORIENTATION = "portrait"
+
+# Which way to rotate the portrait canvas into the landscape buffer. This
+# depends on which way the panel is physically mounted -- if the text comes
+# out upside down, change this to 90.
+ROTATE_DEGREES = 270
+
+if ORIENTATION == "portrait":
+    RENDER_WIDTH, RENDER_HEIGHT = EPD_HEIGHT, EPD_WIDTH   # 480 x 800
+else:
+    RENDER_WIDTH, RENDER_HEIGHT = EPD_WIDTH, EPD_HEIGHT   # 800 x 480
 
 MARGIN = 16          # px kept clear on every side
 LINE_SPACING = 1.18  # baseline-to-baseline as a multiple of the font size
@@ -237,11 +255,14 @@ class EinkRecipeDisplay:
 
     def _render_now(self, text):
         Image, ImageDraw = self._Image, self._ImageDraw
-        max_width = EPD_WIDTH - 2 * MARGIN
-        max_height = EPD_HEIGHT - 2 * MARGIN
+        # Layout happens in "render space" -- 480x800 for portrait,
+        # 800x480 for landscape. Only at the very end do we rotate into the
+        # panel's fixed 800x480 buffer.
+        max_width = RENDER_WIDTH - 2 * MARGIN
+        max_height = RENDER_HEIGHT - 2 * MARGIN
         raw_lines = self._normalise(text)
 
-        img = Image.new("1", (EPD_WIDTH, EPD_HEIGHT), 255)  # 255 = white
+        img = Image.new("1", (RENDER_WIDTH, RENDER_HEIGHT), 255)  # 255 = white
         draw = ImageDraw.Draw(img)
 
         # Shrink the font until the whole recipe fits one screen.
@@ -275,16 +296,28 @@ class EinkRecipeDisplay:
                 draw.text((MARGIN, y), wrapped, font=font, fill=0)  # 0 = black
             y += line_h
 
+        # Rotate render-space image into the panel's fixed landscape buffer.
+        if ORIENTATION == "portrait":
+            panel_img = img.rotate(ROTATE_DEGREES, expand=True)
+            # rotate(expand=True) can leave a canvas of the wrong exact size
+            # due to rounding; paste onto a clean 800x480 canvas to be safe.
+            if panel_img.size != (EPD_WIDTH, EPD_HEIGHT):
+                canvas = Image.new("1", (EPD_WIDTH, EPD_HEIGHT), 255)
+                canvas.paste(panel_img, (0, 0))
+                panel_img = canvas
+        else:
+            panel_img = img
+
         self._epd.init()                 # wake from deep sleep (safe every draw)
         if self._first_draw:
             self._epd.Clear()            # one clean sweep on the very first draw
             self._first_draw = False
-        self._epd.display(self._epd.getbuffer(img))
+        self._epd.display(self._epd.getbuffer(panel_img))
         try:
             self._epd.sleep()            # bistable: image holds with the power off
         except Exception:
             pass
-        self._log(f"drew recipe at {size}px in {len(items)} lines")
+        self._log(f"drew recipe at {size}px in {len(items)} lines, orientation={ORIENTATION}")
 
 
 # Manual smoke test on the Pi:  python3 eink_display.py
