@@ -158,18 +158,30 @@ class RaspberryPi:
             self.DEV_SPI.DEV_Module_Init()
 
         else:
-            # Header SPI0 is /dev/spidev0.0 on a Pi 4, but /dev/spidev10.0 on a
-            # Pi 5 (RP1). Open whichever bus actually exists so both boards work;
-            # OUTDOORGPT_SPI_BUS overrides the choice if ever needed.
-            import glob
+            # The 40-pin header SPI0 is /dev/spidev0.0 on every Pi, including the
+            # Pi 5: there the header GPIOs hang off the RP1, and its SPI0 shows
+            # up as spidev0.0 (CE0) and spidev0.1 (CE1) once SPI is enabled.
+            #
+            # A Pi 5 also exposes /dev/spidev10.0, which is NOT the header: it is
+            # an SPI controller on the SoC itself. It exists even when the header
+            # SPI is disabled, and opening it succeeds and then writes into the
+            # void -- the panel simply stays blank with no error. So require the
+            # header node instead of falling back to whatever exists.
             bus_env = os.environ.get('OUTDOORGPT_SPI_BUS')
             if bus_env and bus_env.strip():
                 spi_bus = int(bus_env)
             elif os.path.exists('/dev/spidev0.0'):
                 spi_bus = 0
             else:
-                nodes = sorted(glob.glob('/dev/spidev*.0'))
-                spi_bus = int(nodes[0].split('spidev')[1].split('.', 1)[0]) if nodes else 0
+                raise RuntimeError(
+                    "/dev/spidev0.0 not found: the 40-pin header SPI is not "
+                    "enabled. Turn it on with dietpi-config > Advanced Options "
+                    "> SPI state (or dtparam=spi=on in /boot/config.txt) and "
+                    "reboot. Note that on a Pi 5 /dev/spidev10.0 can exist while "
+                    "the header SPI is still off: that node is an SPI controller "
+                    "on the SoC, not your header pins, so opening it succeeds "
+                    "and the panel stays blank with no error. Set "
+                    "OUTDOORGPT_SPI_BUS to override this check.")
             self.SPI.open(spi_bus, 0)
             self.SPI.max_speed_hz = 4000000
             self.SPI.mode = 0b00
