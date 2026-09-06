@@ -28,7 +28,7 @@ MAX_BRIGHTNESS = 8      # 0-31; these sit right under your nose in a dark tent
 
 # (r, g, b) per state. "thinking" pulses; the rest are steady.
 COLOURS = {
-    'listening': (0, 255, 60),
+    'listening': (0, 110, 0),
     'thinking':  (0, 60, 255),
     'speaking':  (255, 80, 0),
     'done':      (180, 0, 255),
@@ -98,11 +98,16 @@ class StatusLeds:
         # recipe is still speech, so it stays green and only turns purple once
         # the phone actually falls quiet. is_processing can still be set while
         # speaking, so it has to come last.
-        if getattr(h, 'is_speaking', False):
+        # is_processing counts as speaking, not thinking: it means the speech
+        # worker is alive, and it stays up between sentences while is_speaking
+        # briefly drops. Reading it as thinking would flick the light blue in
+        # the middle of an answer.
+        if getattr(h, 'is_speaking', False) or getattr(h, 'is_processing', False):
             return 'speaking'
         if getattr(h, 'recipe_delivered', False):
             return 'done'
-        if getattr(h, 'is_processing', False):
+        # What is left is the real pause: prompt sent, nothing to say yet.
+        if getattr(h, 'is_generating', False):
             return 'thinking'
         return 'listening'
 

@@ -88,6 +88,11 @@ class LLmToAudio:
         # listening, no more generating, so the answer and the panel stay put
         # while you cook. Cleared by start(), i.e. by any reset or mode switch.
         self.recipe_delivered = False
+        # True from the moment the prompt goes to the LLM until generation
+        # ends. is_processing is no use for this: it only turns on once a
+        # sentence is ready to speak, so the thinking pause itself -- the bit
+        # worth showing -- falls outside it entirely.
+        self.is_generating = False
         # TTFB = time from VAD-detected end-of-utterance to first audio played.
         # Set per-turn by VoiceAgent.run() right after get_speech_input() returns.
         self.last_eou_timestamp = None
@@ -194,6 +199,11 @@ class LLmToAudio:
             {'role': 'system', 'content': self.system_prompt},
         ]
         self.recipe_delivered = False
+        # True from the moment the prompt goes to the LLM until generation
+        # ends. is_processing is no use for this: it only turns on once a
+        # sentence is ready to speak, so the thinking pause itself -- the bit
+        # worth showing -- falls outside it entirely.
+        self.is_generating = False
 
         # Text processing
         self.text_buffer = ""
@@ -644,6 +654,7 @@ class LLmToAudio:
         self.interrupt_event.clear()
         self.is_speaking = False
         self.is_processing = False
+        self.is_generating = False
         self.text_buffer = ""
 
         # Clear any leftover sentences from previous turn
@@ -667,6 +678,7 @@ class LLmToAudio:
         if self.single_turn:
             extra_params = {"cache_prompt": False, "n_keep": 0}
 
+        self.is_generating = True
         llm_response_stream = self.llm_client.chat.completions.create(
             model=voice_agent_utils.DEFAULT_LLM_SERVER_MODEL,
             messages=messages_to_send,
@@ -714,6 +726,8 @@ class LLmToAudio:
                         held_back = ''
                 elif speak_reply:
                     self._process_text_chunk(text_chunk)
+
+        self.is_generating = False
 
         # A reply too short to decide on (never matched or ruled out the marker)
         # is an ordinary one: say it.

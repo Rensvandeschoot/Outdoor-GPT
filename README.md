@@ -377,6 +377,8 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 
 Green and orange are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
 
+The blue window is driven by `is_generating`, a flag added for this. The handler's existing `is_processing` looks like the obvious signal but is not: it only turns on once a sentence is ready to be spoken, so the thinking pause falls entirely outside it and the light would sit on green while the model was already working. `is_processing` is instead read as speaking, because it stays up between sentences while `is_speaking` briefly drops, and reading it as thinking would flick the light blue mid-answer.
+
 `scripts/leds.py` reads the agent's own state from a background thread, so there is nothing to keep in sync at the call sites, and it is fail-safe: without the HAT, without `spidev`, or on the wrong bus it disables itself and the agent runs unchanged. Test the LEDs on their own with `./venv/bin/python test_leds.py` (stop the agent first).
 
 **They share SPI0 with the e-ink panel** — same MOSI, same SCLK, and only the panel uses a chip select, so LED bytes arriving mid-refresh would reach the panel as commands. Both sides take the lock in `scripts/spi_bus.py`, held for a whole refresh, so the animation pauses for a few seconds while a recipe is drawn. Note also that upstream's `display_leds_interrupt` handler is unusable here: it drives external LEDs on GPIO 5, 6 and 13, and 5 and 6 are the panel's BUSY and RST.
