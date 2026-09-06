@@ -65,6 +65,7 @@ class LLmToAudio:
                  show_ttfb=False,
                  rag_retriever=None,  # optional rag.RagRetriever for retrieval-augmented answers
                  eink_enabled=False,  # recipe mode: mirror finished answers to the e-ink screen
+                 rag_enabled=True,   # per-mode: retrieval helps lookup, hurts invention
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
@@ -77,6 +78,12 @@ class LLmToAudio:
         # panel or the waveshare library never touches the hardware.
         self.eink_enabled = eink_enabled
         self.eink = None
+        # Retrieval is per mode. Looking something up (survival, first aid)
+        # is what the manuals are for; inventing a recipe from what someone
+        # happens to be carrying is not, and the chunks that come back for
+        # ingredient lists are period cookbook prose and contents pages that
+        # a small model cannot ignore.
+        self.rag_enabled = rag_enabled
         # Recipe mode hands over exactly one recipe and then stops: no more
         # listening, no more generating, so the answer and the panel stay put
         # while you cook. Cleared by start(), i.e. by any reset or mode switch.
@@ -605,7 +612,7 @@ class LLmToAudio:
         # RAG: augment only the outgoing request with retrieved context; the
         # stored history keeps the plain question so context doesn't accumulate.
         messages_to_send = self.messages
-        if self.rag_retriever is not None:
+        if self.rag_retriever is not None and self.rag_enabled:
             try:
                 rag_context = self.rag_retriever.get_context(user_prompt)
             except Exception as e:
@@ -1277,7 +1284,7 @@ class VoiceAgent():
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
 
-    def full_reset_with_prompt(self, system_prompt=None, start_message=None, eink_enabled=None):
+    def full_reset_with_prompt(self, system_prompt=None, start_message=None, eink_enabled=None, rag_enabled=None):
         """Full reset with optional new system prompt and start message."""
         self._info("Full reset requested")
 
@@ -1287,6 +1294,8 @@ class VoiceAgent():
         # simply shows nothing until the first recipe answer is generated.
         if eink_enabled is not None and hasattr(self, 'output_handler'):
             self.output_handler.eink_enabled = eink_enabled
+        if rag_enabled is not None and hasattr(self, 'output_handler'):
+            self.output_handler.rag_enabled = rag_enabled
 
         self.input_handler.acquire_stream_lock()
         try:

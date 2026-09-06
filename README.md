@@ -312,6 +312,7 @@ An optional [Waveshare 7.5" e-Paper HAT](https://www.waveshare.com/7.5inch-e-pap
 It is wired to stay out of the way:
 
 - **Recipe mode only.** Outdoor Tips and Survive the Night never touch the screen.
+- **No retrieval while cooking.** `prompts.json` carries a `"rag": false` flag on Campfire Recipes. Retrieval is what the manuals are for when you need to look something up, but inventing a meal from what you happen to be carrying is not a lookup: asking for a recipe with pasta and tuna pulls in 19th-century cookbook prose and even contents pages, which a 1.2B model cannot ignore. The other two modes keep retrieval on.
 - **Blank until there's something to show.** Entering recipe mode leaves the screen as it was; it only draws once a recipe has actually been generated.
 - **The last recipe stays.** Turning the dial away from recipes does not clear the panel — the recipe you cooked from is still there.
 - **It checks before it cooks.** The line is crackly and speech recognition mis-hears things, so recipe mode works in two steps: first it reads the ingredients back and asks whether it got them right, and only after you confirm does it produce the recipe.
