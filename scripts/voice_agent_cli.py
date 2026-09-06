@@ -154,6 +154,14 @@ def main():
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
+    # Status LEDs on the audio HAT. Fail-safe: no HAT, no spidev, no LEDs and
+    # the agent is unaffected. Reads the handler's own state, so there is
+    # nothing to keep in sync at the call sites.
+    from leds import StatusLeds
+    status_leds = StatusLeds(va.output_handler, verbose=args.verbose)
+    if status_leds.start():
+        print(">> Status LEDs active (blue=thinking, green=speaking, purple=done)")
+
     va.start()
     print(f">> Took {time.time()-t1:.2f} secs to initialize Voice Agent <<")
 
@@ -290,6 +298,7 @@ def main():
     except KeyboardInterrupt:
         print("\n>> Interrupted by user (Ctrl-C)")
     finally:
+        status_leds.stop()
         # TTFB summary (EOU -> first audio played)
         if args.show_ttfb:
             history = getattr(va.output_handler, 'ttfb_history', [])

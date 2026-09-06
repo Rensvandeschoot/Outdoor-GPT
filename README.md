@@ -364,6 +364,21 @@ python voice_agent_cli.py --platform rpi5 --prompt_file prompts.json --rag_index
 
 The recipe should be spoken *and* appear on the screen a few seconds later.
 
+## Status lights
+
+The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which matters most during the thinking pause: on a small model that silence is long enough to look like a crash.
+
+| Colour | Meaning |
+| ------ | ------- |
+| Blue, pulsing | The model is generating |
+| Green | The phone is speaking |
+| Purple | Recipe delivered; press the button for a new session |
+| Off | Listening |
+
+`scripts/leds.py` reads the agent's own state from a background thread, so there is nothing to keep in sync at the call sites, and it is fail-safe: without the HAT, without `spidev`, or on the wrong bus it disables itself and the agent runs unchanged. Test the LEDs on their own with `./venv/bin/python test_leds.py` (stop the agent first).
+
+**They share SPI0 with the e-ink panel** — same MOSI, same SCLK, and only the panel uses a chip select, so LED bytes arriving mid-refresh would reach the panel as commands. Both sides take the lock in `scripts/spi_bus.py`, held for a whole refresh, so the animation pauses for a few seconds while a recipe is drawn. Note also that upstream's `display_leds_interrupt` handler is unusable here: it drives external LEDs on GPIO 5, 6 and 13, and 5 and 6 are the panel's BUSY and RST.
+
 ## Testing & tuning
 
 - **See what's happening**: start the agent with `--verbose` — it shows which chunks are injected for each question. This is the best way to judge retrieval quality. When the phone starts on its own there is no terminal to pass flags to, so set `VERBOSE=1` in `config.sh` instead and reboot; the output then goes to the journal:

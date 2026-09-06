@@ -28,6 +28,8 @@ Requires, on the Pi only:
 import os
 import threading
 
+import spi_bus  # shared SPI lock (panel vs the HAT LEDs)
+
 # Panel geometry (Waveshare 7.5" V2). The physical panel buffer is ALWAYS
 # 800x480 (landscape) -- the driver has no concept of orientation. To show
 # portrait text we render onto a rotated canvas and rotate the finished
@@ -308,15 +310,16 @@ class EinkRecipeDisplay:
         else:
             panel_img = img
 
-        self._epd.init()                 # wake from deep sleep (safe every draw)
-        if self._first_draw:
-            self._epd.Clear()            # one clean sweep on the very first draw
-            self._first_draw = False
-        self._epd.display(self._epd.getbuffer(panel_img))
-        try:
-            self._epd.sleep()            # bistable: image holds with the power off
-        except Exception:
-            pass
+        with spi_bus.LOCK:  # keep the LEDs off the bus while we draw
+            self._epd.init()                 # wake from deep sleep (safe every draw)
+            if self._first_draw:
+                self._epd.Clear()            # one clean sweep on the very first draw
+                self._first_draw = False
+            self._epd.display(self._epd.getbuffer(panel_img))
+            try:
+                self._epd.sleep()            # bistable: image holds with the power off
+            except Exception:
+                pass
         self._log(f"drew recipe at {size}px in {len(items)} lines, orientation={ORIENTATION}")
 
 
