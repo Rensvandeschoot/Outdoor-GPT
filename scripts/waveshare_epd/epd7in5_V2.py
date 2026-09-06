@@ -28,7 +28,9 @@
 #
 
 
+import os
 import logging
+import time
 from . import epdconfig
 
 # Display resolution
@@ -86,7 +88,20 @@ class EPD:
         logger.debug("e-Paper busy")
         self.send_command(0x71)
         busy = epdconfig.digital_read(self.busy_pin)
+        # OutdoorGPT: upstream waits here forever, so any wiring fault shows up
+        # as a silent hang instead of an error. Give up after a while and say
+        # what we saw. Set OUTDOORGPT_BUSY_TIMEOUT=0 to wait indefinitely.
+        timeout = float(os.environ.get("OUTDOORGPT_BUSY_TIMEOUT", "15"))
+        deadline = time.time() + timeout if timeout > 0 else None
         while(busy == 0):
+            if deadline is not None and time.time() > deadline:
+                raise RuntimeError(
+                    "e-Paper BUSY (GPIO %d, physical pin 29) stayed low for %.0fs: "
+                    "the panel never reported ready. Most likely the BUSY wire is "
+                    "not connected, or swapped with RST -- RST sits on physical pin "
+                    "31, right next to it. Also worth checking that the FPC ribbon "
+                    "is fully seated and the right way round."
+                    % (self.busy_pin, timeout))
             self.send_command(0x71)
             busy = epdconfig.digital_read(self.busy_pin)
         epdconfig.delay_ms(20)
