@@ -3,11 +3,10 @@
 The point is to make the invisible visible: on a small model the thinking
 pause is long enough that silence looks like a broken phone. Colours:
 
+    listening  green           (your turn: the mic is open)
     thinking   blue, pulsing   (the model is generating)
-    speaking   green           (audio is playing)
+    speaking   orange          (the phone is talking, so wait)
     done       purple          (recipe delivered; press the button for a new one)
-    listening  off             (nothing to report, and the contrast makes the
-                                other three easier to read at a glance)
 
 Everything here is fail-safe. No spidev, no HAT, wrong bus: the class turns
 into a no-op and the agent runs exactly as it would without it.
@@ -29,10 +28,11 @@ MAX_BRIGHTNESS = 8      # 0-31; these sit right under your nose in a dark tent
 
 # (r, g, b) per state. "thinking" pulses; the rest are steady.
 COLOURS = {
-    'thinking': (0, 60, 255),
-    'speaking': (0, 255, 60),
-    'done':     (180, 0, 255),
-    'off':      (0, 0, 0),
+    'listening': (0, 255, 60),
+    'thinking':  (0, 60, 255),
+    'speaking':  (255, 80, 0),
+    'done':      (180, 0, 255),
+    'off':       (0, 0, 0),   # only on shutdown
 }
 
 POLL_INTERVAL = 0.05    # how often we look at the agent's state
@@ -104,7 +104,7 @@ class StatusLeds:
             return 'done'
         if getattr(h, 'is_processing', False):
             return 'thinking'
-        return 'off'
+        return 'listening'
 
     def _run(self):
         while not self._stop.is_set():

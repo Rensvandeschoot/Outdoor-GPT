@@ -370,10 +370,12 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 
 | Colour | Meaning |
 | ------ | ------- |
+| Green | Your turn — the mic is open and it is listening |
 | Blue, pulsing | The model is generating |
-| Green | The phone is speaking |
+| Orange | The phone is talking, so wait |
 | Purple | Recipe delivered; press the button for a new session |
-| Off | Listening |
+
+Green and orange are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
 
 `scripts/leds.py` reads the agent's own state from a background thread, so there is nothing to keep in sync at the call sites, and it is fail-safe: without the HAT, without `spidev`, or on the wrong bus it disables itself and the agent runs unchanged. Test the LEDs on their own with `./venv/bin/python test_leds.py` (stop the agent first).
 

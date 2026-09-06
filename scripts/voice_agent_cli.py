@@ -160,7 +160,7 @@ def main():
     from leds import StatusLeds
     status_leds = StatusLeds(va.output_handler, verbose=args.verbose)
     if status_leds.start():
-        print(">> Status LEDs active (blue=thinking, green=speaking, purple=done)")
+        print(">> Status LEDs active (green=your turn, blue=thinking, orange=speaking, purple=done)")
 
     va.start()
     print(f">> Took {time.time()-t1:.2f} secs to initialize Voice Agent <<")
