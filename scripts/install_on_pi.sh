@@ -88,6 +88,9 @@ cp "$REPO"/scripts/*.py "$REPO"/scripts/*.sh "$REPO"/prompts.json "$AGENT_DIR/" 
   || die "copy failed"
 cp "$REPO/scripts/config.sh" "$AGENT_DIR/" || die "copy of config.sh failed"
 chmod +x "$AGENT_DIR"/start_*.sh "$AGENT_DIR"/download_embedding_model.sh "$AGENT_DIR"/startup_script.sh
+# Directly-runnable helpers: a Windows checkout can drop the exec bit, so
+# set it here rather than relying on how the file arrived.
+chmod +x "$AGENT_DIR"/check_gpio.sh "$AGENT_DIR"/test_eink.py 2>/dev/null
 ok "scripts, prompts.json and config.sh"
 
 # Bundled e-ink driver (optional hardware). Copy its contents idempotently so a
