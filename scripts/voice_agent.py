@@ -77,6 +77,10 @@ class LLmToAudio:
         # panel or the waveshare library never touches the hardware.
         self.eink_enabled = eink_enabled
         self.eink = None
+        # Recipe mode hands over exactly one recipe and then stops: no more
+        # listening, no more generating, so the answer and the panel stay put
+        # while you cook. Cleared by start(), i.e. by any reset or mode switch.
+        self.recipe_delivered = False
         # TTFB = time from VAD-detected end-of-utterance to first audio played.
         # Set per-turn by VoiceAgent.run() right after get_speech_input() returns.
         self.last_eou_timestamp = None
@@ -182,6 +186,7 @@ class LLmToAudio:
         self.messages = [
             {'role': 'system', 'content': self.system_prompt},
         ]
+        self.recipe_delivered = False
 
         # Text processing
         self.text_buffer = ""
@@ -702,6 +707,9 @@ class LLmToAudio:
             recipe_text = ''.join(raw_chunks)
             if recipe_text.strip() and '\n' in recipe_text:
                 self._render_eink(recipe_text)
+                # One recipe per session: the run loop stops listening from
+                # here, and the interrupt button starts a fresh one.
+                self.recipe_delivered = True
 
         # Process any remaining text
         self._finish_processing()
@@ -1161,9 +1169,24 @@ class VoiceAgent():
         # avoid conflicts with audio streams
         self.input_handler.start()         
 
+        idle_notified = False
         while True:
             if self.stop_event_set():
                 break
+
+            # Recipe mode is one-shot: after a recipe has been delivered we stop
+            # listening and stop generating, so the spoken answer and the e-ink
+            # panel stay as they are while you cook. The interrupt button clears
+            # this by resetting the mode (see voice_agent_cli.py).
+            if getattr(self.output_handler, 'recipe_delivered', False):
+                if not idle_notified:
+                    self.mute_microphone()
+                    self.output_handler.assistant_printer.show_idle(
+                        'recipe ready - press the button for a new one')
+                    idle_notified = True
+                time.sleep(0.2)
+                continue
+            idle_notified = False
 
             self.debug_state("before_get_speech")
             user_input_transcribed = self.input_handler.get_speech_input()

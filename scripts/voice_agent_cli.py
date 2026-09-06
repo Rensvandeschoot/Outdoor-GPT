@@ -161,6 +161,8 @@ def main():
 
     # Define button callbacks (used by both GPIO button and keyboard)
     button_press_count = {'n': 0}
+    # Which prompt is active now, so the button can restart the same mode.
+    current_prompt = {'p': initial_prompt}
 
     def on_interrupt_agent():
         """Interrupt agent's speech output and discard pending input."""
@@ -197,11 +199,18 @@ def main():
             print(f"[Interrupt agent #{button_press_count['n']} done]")
 
     def on_button_press():
-        """Button press: only interrupt agent speech (no-op if agent isn't speaking)."""
+        """Interrupt the agent, or start a fresh recipe session."""
+        # Recipe mode delivers one recipe and then stops listening, so there is
+        # nothing to interrupt. Restart the same mode instead: cleared context
+        # and the opening question again, ready for new ingredients.
+        if getattr(va.output_handler, 'recipe_delivered', False):
+            switch_to_prompt(current_prompt['p'])
+            return
         if va.output_handler.is_speaking or va.output_handler.is_processing:
             on_interrupt_agent()
 
     def switch_to_prompt(new_prompt):
+        current_prompt['p'] = new_prompt
         if log_file:
             prompt_name = new_prompt.get('name', 'unnamed')
             log_file.write(f"\n[RESET] [PROMPT] {prompt_name}\n")
@@ -215,7 +224,7 @@ def main():
     # Setup GPIO interrupt button via gpio_handler
     if gpio_handler:
         gpio_handler.set_interrupt_callback(on_button_press)
-        print(">> GPIO interrupt button enabled (interrupts agent speech only)")
+        print(">> GPIO interrupt button enabled (interrupts speech; restarts recipe mode once a recipe is done)")
 
     # -- rotary switch -> prompt selection --
     # Debounce so dial sweeps don't queue multiple prompt switches, and
