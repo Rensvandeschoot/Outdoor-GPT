@@ -314,6 +314,8 @@ It is wired to stay out of the way:
 - **Recipe mode only.** Outdoor Tips and Survive the Night never touch the screen.
 - **Blank until there's something to show.** Entering recipe mode leaves the screen as it was; it only draws once a recipe has actually been generated.
 - **The last recipe stays.** Turning the dial away from recipes does not clear the panel — the recipe you cooked from is still there.
+- **It checks before it cooks.** The line is crackly and speech recognition mis-hears things, so recipe mode works in two steps: first it reads the ingredients back and asks whether it got them right, and only after you confirm does it produce the recipe.
+- **The recipe is not read aloud.** A recipe is for looking at while you cook, not for listening to, so it goes straight to the panel and the phone only says "Your recipe is on the screen." The model marks that reply with `<<RECIPE>>`, which the agent uses to hold speech back and to strip before displaying. If the model forgets the marker, the recipe is spoken as before and still drawn — degraded, not broken.
 - **One recipe, then it stops.** Once a recipe has been handed over, the agent stops listening and stops generating, so nothing talks over you while you cook. Press the **interrupt button** to start a fresh session: same mode, cleared context, and it asks for your ingredients again. Turning the dial does the same. A one-line clarifying reply does not count as a recipe, so being asked what you have does not end the session.
 - **Fail-safe.** If the panel is missing, unplugged, or the driver isn't installed, drawing is skipped silently and the voice agent runs exactly as before. It also runs in a background thread, so the ~6 s e-ink refresh never holds up the conversation.
 

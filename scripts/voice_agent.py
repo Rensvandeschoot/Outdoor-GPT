@@ -668,6 +668,13 @@ class LLmToAudio:
         )
         text_chunks = []
         raw_chunks = []  # unmodified LLM text (keeps newlines) for the e-ink screen
+        # Recipe mode: a reply that opens with RECIPE_MARKER is the recipe itself,
+        # which goes to the screen rather than the speaker. We cannot know that
+        # until the first characters arrive, so hold speech back until the marker
+        # is either matched or ruled out. None = still deciding.
+        speak_reply = None
+        held_back = ''
+        marker = voice_agent_utils.RECIPE_MARKER
         for chunk in llm_response_stream:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
@@ -684,12 +691,34 @@ class LLmToAudio:
 
                 # remove asterisks and other formatting info from the text
                 text_chunk = self._clean_llm_output(raw_chunk)
-
-                self._process_text_chunk(text_chunk)            
                 text_chunks.append(text_chunk)
+
+                if speak_reply is None:
+                    held_back += text_chunk
+                    probe = held_back.lstrip()
+                    if probe.startswith(marker):
+                        speak_reply = False          # recipe: screen only
+                        held_back = ''
+                    elif len(probe) < len(marker) and marker.startswith(probe):
+                        pass                         # could still become the marker
+                    else:
+                        speak_reply = True           # ordinary reply: speak it
+                        self._process_text_chunk(held_back)
+                        held_back = ''
+                elif speak_reply:
+                    self._process_text_chunk(text_chunk)
+
+        # A reply too short to decide on (never matched or ruled out the marker)
+        # is an ordinary one: say it.
+        if speak_reply is None and held_back.strip():
+            speak_reply = True
+            self._process_text_chunk(held_back)
 
         # Always add assistant response to keep context valid (even partial)
         assistant_response = ''.join(text_chunks)
+        if voice_agent_utils.RECIPE_MARKER in assistant_response:
+            assistant_response = assistant_response.replace(
+                voice_agent_utils.RECIPE_MARKER, '').strip()
         if assistant_response.strip():
             self.messages.append({'role': 'assistant', 'content': assistant_response})
 
@@ -703,9 +732,18 @@ class LLmToAudio:
         # recipe stays on screen with the power off. Non-blocking and fail-safe.
         # Skipped for the other prompt modes (eink_enabled is False) and for a
         # one-line clarifying reply (no newline -> not an actual recipe).
+        if speak_reply is False:
+            # The recipe went to the screen, so speak one short line rather
+            # than leaving the caller with silence.
+            self._process_text_chunk(voice_agent_utils.RECIPE_ON_SCREEN_MESSAGE)
+
         if getattr(self, 'eink_enabled', False):
-            recipe_text = ''.join(raw_chunks)
-            if recipe_text.strip() and '\n' in recipe_text:
+            recipe_text = ''.join(raw_chunks).replace(
+                voice_agent_utils.RECIPE_MARKER, '').strip()
+            # The marker is the reliable signal that this is the recipe; the
+            # multi-line test stays as a fallback for when the model omits it.
+            is_recipe = speak_reply is False or len(recipe_text.splitlines()) > 1
+            if recipe_text and is_recipe:
                 self._render_eink(recipe_text)
                 # One recipe per session: the run loop stops listening from
                 # here, and the interrupt button starts a fresh one.

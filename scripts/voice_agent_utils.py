@@ -12,6 +12,14 @@ DEFAULT_SYSTEM_PROMPT = "Start each response with a brief, varied acknowledgment
 
 DEFAULT_START_MESSAGE = "Ask me anything!"
 DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
+
+# Recipe mode. The model prefixes a finished recipe with this marker, which
+# lets the agent send it to the e-ink screen instead of reading it out loud:
+# a recipe is for looking at while you cook, not for listening to. The marker
+# is stripped before anything is displayed or stored.
+RECIPE_MARKER = "<<RECIPE>>"
+# Spoken instead of the recipe, so the phone does not just fall silent.
+RECIPE_ON_SCREEN_MESSAGE = "Your recipe is on the screen."
 DEFAULT_EXIT_COMMAND = "please quit"
 
 
