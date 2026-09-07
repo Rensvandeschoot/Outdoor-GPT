@@ -1,14 +1,13 @@
 #!/bin/bash
 #
-# Starts llama.cpp server in embedding mode (for RAG).
+# Starts the llama.cpp embedding server used for retrieval.
 #
-# Download the embedding model first with download_embedding_model.sh.
-# Runs on port 8081, next to the chat LLM server on port 8080.
+# The llama-server path, model and port come from config.sh next to this
+# script; an argument overrides the model. Download the model first with
+# download_embedding_model.sh.
 #
-# ./start_embedding_server.sh [model.gguf]
+#   ./start_embedding_server.sh [model.gguf]
 
-# Device settings (llama-server path, model, port) come from config.sh next
-# to this script. An argument still overrides the model.
 CONFIG="$(dirname "$0")/config.sh"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
@@ -29,10 +28,10 @@ if [ ! -x "$LLAMA_SERVER" ]; then
   exit 1
 fi
 
-# notes:
-# - batch size must cover the full chunk length for embeddings
-# - listens on all interfaces so a PC on the local network can run
-#   rag_ingest.py against this server (see Readme, Outdoor GPT section)
+# Notes:
+# - the batch size must cover a whole chunk, since an embedding cannot be split
+# - --host 0.0.0.0 lets another machine on the network use this server, for
+#   example to build the index with rag_ingest.py --embedding_server_url
 nice -n 10 \
   "$LLAMA_SERVER" -m "$MODEL" \
   --embedding \

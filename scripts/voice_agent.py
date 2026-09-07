@@ -78,11 +78,9 @@ class LLmToAudio:
         # prompts.json) and again on every dial or keyboard switch.
         self.recipe_mode = recipe_mode
         self.eink = None          # EinkRecipeDisplay, created on first use
-        # Retrieval is per mode. Looking something up (survival, first aid)
-        # is what the manuals are for; inventing a recipe from what someone
-        # happens to be carrying is not, and the chunks that come back for
-        # ingredient lists are period cookbook prose and contents pages that
-        # a small model cannot ignore.
+        # Retrieval is per mode: it suits lookups (survival, first aid) and
+        # hurts invention. For an ingredient list the retrieved chunks are
+        # historical cookbook prose that derails a small model.
         self.rag_enabled = rag_enabled
         # Recipe mode hands over exactly one recipe and then stops: no more
         # listening, no more generating, so the answer and the panel stay put
@@ -199,10 +197,6 @@ class LLmToAudio:
             {'role': 'system', 'content': self.system_prompt},
         ]
         self.recipe_delivered = False
-        # True from the moment the prompt goes to the LLM until generation
-        # ends. is_processing is no use for this: it only turns on once a
-        # sentence is ready to speak, so the thinking pause itself -- the bit
-        # worth showing -- falls outside it entirely.
         self.is_generating = False
 
         # Text processing

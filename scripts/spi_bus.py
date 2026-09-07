@@ -7,7 +7,7 @@ the drawing. Both take this lock around their writes so their turns never
 overlap.
 
 Held for the length of a whole panel refresh, which is several seconds. That
-is deliberate: a paused LED animation is not worth a mangled recipe.
+is deliberate: a paused LED animation is harmless, a corrupted recipe is not.
 """
 
 import threading

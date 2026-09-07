@@ -33,7 +33,7 @@ echo
 echo "[1/6] Checking prerequisites"
 [ "$(id -u)" = "0" ] || die "run as root (sudo -i)"
 [ -f "$REPO/scripts/config.sh" ] || die "run this from the cloned repo: cd /root/Outdoor-GPT && ./scripts/install_on_pi.sh"
-[ -d "$AGENT_DIR" ] || die "$AGENT_DIR not found. Install edge_voice_agent first (see README Step 4.1)."
+[ -d "$AGENT_DIR" ] || die "$AGENT_DIR not found. Install edge_voice_agent first (see README, Step 4: What has to be there first)."
 [ -x "$AGENT_DIR/venv/bin/python" ] || die "no virtualenv at $AGENT_DIR/venv. Install edge_voice_agent first."
 ok "agent directory and virtualenv"
 

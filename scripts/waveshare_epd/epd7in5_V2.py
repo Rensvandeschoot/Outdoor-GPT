@@ -1,3 +1,11 @@
+# ==========================================================================
+# Vendored for OutdoorGPT from Waveshare's e-Paper library
+#   https://github.com/waveshareteam/e-Paper  (MIT, see the notice below)
+#
+# One change from upstream: ReadBusy() gives up after a timeout
+# (OUTDOORGPT_BUSY_TIMEOUT, default 15 s) and raises an error naming the BUSY
+# pin, instead of waiting forever when the panel never reports ready.
+# ==========================================================================
 # *****************************************************************************
 # * | File        :	  epd7in5.py
 # * | Author      :   Waveshare team

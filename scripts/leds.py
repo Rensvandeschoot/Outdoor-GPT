@@ -1,7 +1,7 @@
 """Status light on the three APA102 LEDs of the ReSpeaker 2-Mic HAT.
 
-The point is to make the invisible visible: on a small model the thinking
-pause is long enough that silence looks like a broken phone. Colours:
+The thinking pause on a small model is long enough that silence reads as a
+fault; the LEDs show what is actually happening. Colours:
 
     listening  green           (your turn: the mic is open)
     thinking   blue, pulsing   (the model is generating)
@@ -24,7 +24,7 @@ import spi_bus
 N_LEDS = 3
 SPI_BUS = 0
 SPI_DEVICE = 1
-MAX_BRIGHTNESS = 8      # 0-31; these sit right under your nose in a dark tent
+MAX_BRIGHTNESS = 8      # 0-31; kept low because the handset is used close up, often in the dark
 
 # (r, g, b) per state. "thinking" pulses; the rest are steady.
 COLOURS = {
@@ -94,14 +94,12 @@ class StatusLeds:
     # -- state ------------------------------------------------------------
     def _state(self):
         h = self._handler
-        # Order matters. Speaking wins over everything: the closing line after a
-        # recipe is still speech, so it stays green and only turns purple once
-        # the phone actually falls quiet. is_processing can still be set while
-        # speaking, so it has to come last.
-        # is_processing counts as speaking, not thinking: it means the speech
-        # worker is alive, and it stays up between sentences while is_speaking
-        # briefly drops. Reading it as thinking would flick the light blue in
-        # the middle of an answer.
+        # Priority order. Speech first: the closing line after a recipe is still
+        # speech, so it stays orange and only turns purple once the phone is
+        # quiet. is_processing counts as speech rather than thinking, because it
+        # means the speech worker is alive and it stays up between sentences
+        # while is_speaking briefly drops; reading it as thinking would flick
+        # the light blue mid-answer.
         if getattr(h, 'is_speaking', False) or getattr(h, 'is_processing', False):
             return 'speaking'
         if getattr(h, 'recipe_delivered', False):

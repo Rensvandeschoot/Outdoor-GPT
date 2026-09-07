@@ -21,8 +21,8 @@ importing this module on a dev machine (or a Pi without the panel) is harmless.
 
 Requires, on the Pi only:
     * Pillow            (pip install pillow)
-    * waveshare_epd     (the Waveshare e-Paper Python library, module
-                         `waveshare_epd.epd7in5_V2` on the import path)
+    * waveshare_epd     (bundled in this repository as scripts/waveshare_epd,
+                         a vendored copy of the Waveshare e-Paper driver)
 """
 
 import os

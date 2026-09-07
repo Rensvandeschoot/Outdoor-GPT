@@ -13,9 +13,12 @@
 #    DC (25), CS (8) and the hardware SPI pins (MOSI 10, SCLK 11) are unchanged.
 #    Wire the panel's ribbon to match these pins.
 #
-# 2. SPI-bus auto-detect in module_init(). The header SPI0 is /dev/spidev0.0 on
-#    a Pi 4 but /dev/spidev10.0 on a Pi 5 (RP1), so we open whichever exists
-#    instead of hard-coding bus 0. Override with the OUTDOORGPT_SPI_BUS env var.
+# 2. SPI bus check in module_init(). The 40-pin header SPI0 is /dev/spidev0.0
+#    on every Pi. A Pi 5 also exposes /dev/spidev10.0, an SPI controller on
+#    the SoC that exists even with header SPI disabled: opening it succeeds
+#    and the panel simply stays blank. module_init() therefore requires
+#    spidev0.0 and raises a readable error otherwise. The OUTDOORGPT_SPI_BUS
+#    environment variable overrides the bus number.
 # ==========================================================================
 # /*****************************************************************************
 # * | File        :	  epdconfig.py

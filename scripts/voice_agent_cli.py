@@ -1,34 +1,28 @@
-# CLI for conversational voice agent.
+# CLI for the conversational voice agent, OutdoorGPT build.
 #
-# Usage examples:
+# Usage:
 #
-#   python voice_agent_cli.py
+#   python voice_agent_cli.py                                   # random prompt, no hardware
+#   python voice_agent_cli.py --platform rpi5                   # GPIO: interrupt button + rotary dial
+#   python voice_agent_cli.py --prompt_file prompts.json --rag_index rag_index
+#   python voice_agent_cli.py --enable_keyboard_control
+#   python voice_agent_cli.py --verbose
 #
-#   With keyboard controls:
-#     python voice_agent_cli.py --enable_keyboard_control
+# A prompt in prompts.json may carry, besides system_prompt and start_message:
+#   "mode": "recipe"          one recipe per session, drawn on the e-ink panel
+#   "rag": false              no retrieval in that mode
+#   "silence_seconds": 1.5    how long to wait after the caller stops talking
 #
-#   With GPIO (interrupt button + rotary dial) on Raspberry Pi 5:
-#     python voice_agent_cli.py --platform rpi5
+# Controls:
+#   Rotary dial       - selects one of the first three prompts (full reset)
+#   Interrupt button  - stops the agent mid-speech; after a recipe has been
+#                       delivered, starts a new recipe session instead
+#   Keyboard (with --enable_keyboard_control):
+#     ENTER           - same as the interrupt button
+#     SPACE           - mute / unmute the microphone
+#     g / s / f       - prompt 1 / 2 / 3, mirroring the dial
 #
-#   With GPIO (interrupt button + rotary dial) on Orange Pi 5 Pro:
-#     python voice_agent_cli.py --platform opi5
-#
-#   Keyboard controls (when --enable_keyboard_control is set):
-#     ENTER          - Interrupt agent output (only while agent is speaking)
-#     SPACE          - Toggle microphone mute/unmute
-#     g / s / f      - Switch to prompt 1 / 2 / 3 (mirrors rotary dial positions)
-#
-#   GPIO controls:
-#     Interrupt button - Interrupt agent output (only while agent is speaking)
-#     Rotary dial      - Switch among the first 3 prompts in prompts.json
-#
-#   Different interaction handlers:
-#     python voice_agent_cli.py --interaction_handler colored           # Rich console (default)
-#
-#   Verbose mode (debug output):
-#     python voice_agent_cli.py --verbose
-#
-# Exit: Say "goodbye" (voice command)
+# Exit: say "please quit" (DEFAULT_EXIT_COMMAND in voice_agent_utils.py), or Ctrl-C.
 
 import threading
 import time
@@ -127,7 +121,7 @@ def main():
     )
     print(f">> Initialized AudioToTextInput in {time.time() - start_time:.2f} seconds -- <<")
 
-    # Optional RAG retriever (needs the embedding server running on port 8081)
+    # Optional RAG retriever (needs the embedding server; see config.sh for the port)
     rag_retriever = None
     if args.rag_index:
         from rag import RagRetriever

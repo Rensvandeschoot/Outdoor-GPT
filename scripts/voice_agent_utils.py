@@ -12,6 +12,7 @@ DEFAULT_SYSTEM_PROMPT = "Start each response with a brief, varied acknowledgment
 
 DEFAULT_START_MESSAGE = "Ask me anything!"
 DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
+DEFAULT_EXIT_COMMAND = "please quit"
 
 # Recipe mode. The model prefixes a finished recipe with this marker, which
 # lets the agent send it to the e-ink screen instead of reading it out loud:
@@ -20,7 +21,6 @@ DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
 RECIPE_MARKER = "<<RECIPE>>"
 # Spoken instead of the recipe, so the phone does not just fall silent.
 RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe. Enjoy your outdoor-meal."
-DEFAULT_EXIT_COMMAND = "please quit"
 
 
 def get_cli_argument_parser():

@@ -7,8 +7,7 @@ rotary dial, no microphone, no language model, no servers. Use it to prove the
 wiring, the driver and Pillow are all working before wiring the screen into the
 voice agent.
 
-Because it never reads the rotary dial, it works fine with the dial
-disconnected - handy while the position-1/2 wires are off the bench.
+It never reads the rotary dial, so it also works with the dial disconnected.
 
 Run on the Pi, inside the agent's venv, from the folder that holds
 eink_display.py and the waveshare_epd/ driver (that is /root/edge_voice_agent

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Do the three LEDs on the ReSpeaker 2-Mic HAT respond?
+"""Light the three APA102 LEDs on the ReSpeaker 2-Mic HAT, one colour at a time.
 
-They are APA102s on the SPI bus -- the same bus as the e-ink panel, which is
-why this is a separate test rather than something wired into the agent
-straight away. Stop the agent first so nothing else is using the bus:
+Use it to confirm the LEDs respond before relying on the status lights in
+leds.py. They share the SPI bus with the e-ink panel, so stop the agent first
+so nothing else is driving the bus:
 
     systemctl stop dietpi-autostart_custom.service
     ./venv/bin/python test_leds.py
 
-Try another chip select if nothing happens (the HAT does not really use one,
-so the number mostly decides which CE line wiggles):
+The HAT does not use a chip select, so the device number mainly decides which
+CE line toggles. If nothing lights up, try the other one:
 
     ./venv/bin/python test_leds.py --bus 0 --device 0
 """
@@ -79,8 +79,8 @@ def main():
 
     spi.writebytes(frame(off, 0))
     spi.close()
-    print("done - LEDs back off. Saw nothing? Try --device 0, or the LEDs are")
-    print("not on this bus and we need the HAT's own driver instead.")
+    print("done - LEDs back off. If nothing lit, try --device 0; if that stays dark too,")
+    print("the LEDs are not on this bus.")
     return 0
 
 

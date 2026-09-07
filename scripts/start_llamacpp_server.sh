@@ -1,16 +1,14 @@
 #!/bin/bash
 #
-# Starts llama.cpp server with the provided model file.
+# Starts the llama.cpp chat server for the voice agent.
 #
-# Download gguf model first (eg with download_llm.sh).
-# Then start server:
-# ./start_llama_server.sh models/llms/LFM2-350M-Q4_K_M.gguf
-# Optional second arg: context size in tokens (default 1024; use 2048+ with --rag_index)
-# ./start_llama_server.sh models/llms/LFM2-350M-Q4_K_M.gguf 2048
+# The llama-server path, model, context size and port come from config.sh
+# next to this script. Arguments override the model and the context size:
+#
+#   ./start_llamacpp_server.sh                          # everything from config.sh
+#   ./start_llamacpp_server.sh models/llms/other.gguf   # another model
+#   ./start_llamacpp_server.sh models/llms/other.gguf 8192
 
-
-# Device settings (llama-server path, model, context, port) come from
-# config.sh next to this script. Arguments still override them.
 CONFIG="$(dirname "$0")/config.sh"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
