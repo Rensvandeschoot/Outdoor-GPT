@@ -64,7 +64,7 @@ class LLmToAudio:
                  single_turn=False,
                  show_ttfb=False,
                  rag_retriever=None,  # optional rag.RagRetriever for retrieval-augmented answers
-                 eink_enabled=False,  # recipe mode: mirror finished answers to the e-ink screen
+                 recipe_mode=False,   # one recipe per session, drawn on the e-ink panel if present
                  rag_enabled=True,   # per-mode: retrieval helps lookup, hurts invention
                  ):
         """Initialize the streamer with Piper and LLM models."""
@@ -72,12 +72,12 @@ class LLmToAudio:
         self.single_turn = single_turn
         self.show_ttfb = show_ttfb
         self.rag_retriever = rag_retriever
-        # E-ink recipe screen. eink_enabled is flipped per prompt mode (set on the
-        # initial prompt and again on every rotary/keyboard switch). The display
-        # object is created lazily on the first render, so a machine without the
-        # panel or the waveshare library never touches the hardware.
-        self.eink_enabled = eink_enabled
-        self.eink = None
+        # Recipe mode: the recipe is drawn on the e-ink panel when one is
+        # available, the session ends after a single recipe, and the interrupt
+        # button starts the next one. Set per prompt (the "mode" key in
+        # prompts.json) and again on every dial or keyboard switch.
+        self.recipe_mode = recipe_mode
+        self.eink = None          # EinkRecipeDisplay, created on first use
         # Retrieval is per mode. Looking something up (survival, first aid)
         # is what the manuals are for; inventing a recipe from what someone
         # happens to be carrying is not, and the chunks that come back for
@@ -596,17 +596,30 @@ class LLmToAudio:
 
     
 
-    def _render_eink(self, text):
-        """Mirror a finished recipe onto the e-ink panel (recipe mode only).
+    def _screen_available(self):
+        """Whether the e-ink panel can be used this session.
 
-        Lazily creates the display object on first use, then hands the text off.
-        The display module draws in a background thread and swallows any hardware
-        error, so a missing or unplugged panel can never block or crash the agent.
+        Creates the display object on first call and probes it once: importing
+        the driver and claiming its pins. A panel that fails to come up stays
+        unavailable for the session, and recipes are read out instead.
         """
         try:
             if self.eink is None:
                 from eink_display import EinkRecipeDisplay
                 self.eink = EinkRecipeDisplay(verbose=self.verbose)
+            return self.eink.available()
+        except Exception as e:
+            self._info(f">> e-ink unavailable: {e}")
+            return False
+
+    def _render_eink(self, text):
+        """Draw a finished recipe on the e-ink panel.
+
+        Only called after _screen_available() returned True. Drawing runs in a
+        background thread and swallows hardware errors, so it can never block
+        or crash the agent.
+        """
+        try:
             self.eink.render_async(text)
         except Exception as e:
             self._info(f">> e-ink render skipped: {e}")
@@ -687,13 +700,16 @@ class LLmToAudio:
         )
         text_chunks = []
         raw_chunks = []  # unmodified LLM text (keeps newlines) for the e-ink screen
-        # Recipe mode: a reply that opens with RECIPE_MARKER is the recipe itself,
-        # which goes to the screen rather than the speaker. We cannot know that
-        # until the first characters arrive, so hold speech back until the marker
-        # is either matched or ruled out. None = still deciding.
-        speak_reply = None
-        held_back = ''
+        # Recipe mode. The model opens the recipe with RECIPE_MARKER. With a
+        # working screen the recipe goes there and is not read out; without one
+        # it is read out after all, so a missing or failed panel never loses a
+        # recipe. Decided before streaming starts, because speech begins before
+        # the reply is complete.
+        screen_ok = self.recipe_mode and self._screen_available()
         marker = voice_agent_utils.RECIPE_MARKER
+        marker_seen = False       # this reply is the recipe
+        route_decided = False     # marker matched or ruled out
+        held_back = ''
         for chunk in llm_response_stream:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
@@ -712,27 +728,30 @@ class LLmToAudio:
                 text_chunk = self._clean_llm_output(raw_chunk)
                 text_chunks.append(text_chunk)
 
-                if speak_reply is None:
+                if not route_decided:
                     held_back += text_chunk
                     probe = held_back.lstrip()
                     if probe.startswith(marker):
-                        speak_reply = False          # recipe: screen only
+                        marker_seen = True
+                        route_decided = True
+                        rest = probe[len(marker):]
+                        if not screen_ok and rest.strip():
+                            self._process_text_chunk(rest)
                         held_back = ''
                     elif len(probe) < len(marker) and marker.startswith(probe):
                         pass                         # could still become the marker
                     else:
-                        speak_reply = True           # ordinary reply: speak it
+                        route_decided = True
                         self._process_text_chunk(held_back)
                         held_back = ''
-                elif speak_reply:
+                elif not (marker_seen and screen_ok):
                     self._process_text_chunk(text_chunk)
 
         self.is_generating = False
 
         # A reply too short to decide on (never matched or ruled out the marker)
         # is an ordinary one: say it.
-        if speak_reply is None and held_back.strip():
-            speak_reply = True
+        if not route_decided and held_back.strip():
             self._process_text_chunk(held_back)
 
         # Always add assistant response to keep context valid (even partial)
@@ -748,26 +767,23 @@ class LLmToAudio:
             self._info(">> Interrupted, skipping finish processing")
             return
 
-        # Recipe mode only: mirror the finished recipe onto the e-ink panel so it
-        # can be read hands-free while cooking. The panel is bistable, so the
-        # recipe stays on screen with the power off. Non-blocking and fail-safe.
-        # Skipped for the other prompt modes (eink_enabled is False) and for a
-        # one-line clarifying reply (no newline -> not an actual recipe).
-        if speak_reply is False:
-            # The recipe went to the screen, so speak one short line rather
-            # than leaving the caller with silence.
+        withheld = marker_seen and screen_ok
+        if withheld:
+            # The recipe went to the screen, so say one short line rather than
+            # leaving the caller with silence.
             self._process_text_chunk(voice_agent_utils.RECIPE_ON_SCREEN_MESSAGE)
 
-        if getattr(self, 'eink_enabled', False):
-            recipe_text = ''.join(raw_chunks).replace(
-                voice_agent_utils.RECIPE_MARKER, '').strip()
+        if self.recipe_mode:
+            recipe_text = ''.join(raw_chunks).replace(marker, '').strip()
             # The marker is the reliable signal that this is the recipe; the
-            # multi-line test stays as a fallback for when the model omits it.
-            is_recipe = speak_reply is False or len(recipe_text.splitlines()) > 1
+            # multi-line test is a fallback for when the model omits it. A
+            # one-line clarifying question is neither.
+            is_recipe = marker_seen or len(recipe_text.splitlines()) > 1
             if recipe_text and is_recipe:
-                self._render_eink(recipe_text)
-                # One recipe per session: the run loop stops listening from
-                # here, and the interrupt button starts a fresh one.
+                if screen_ok:
+                    self._render_eink(recipe_text)
+                # One recipe per session, screen or not: the run loop stops
+                # listening here and the interrupt button starts a fresh one.
                 self.recipe_delivered = True
 
         # Process any remaining text
@@ -1298,16 +1314,16 @@ class VoiceAgent():
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
 
-    def full_reset_with_prompt(self, system_prompt=None, start_message=None, eink_enabled=None, rag_enabled=None):
+    def full_reset_with_prompt(self, system_prompt=None, start_message=None, recipe_mode=None, rag_enabled=None):
         """Full reset with optional new system prompt and start message."""
         self._info("Full reset requested")
 
-        # Turn the e-ink recipe screen on/off with the mode. We deliberately do
-        # NOT clear the panel here: it is bistable, so the last recipe stays
-        # readable after switching to another mode. A fresh recipe-mode session
-        # simply shows nothing until the first recipe answer is generated.
-        if eink_enabled is not None and hasattr(self, 'output_handler'):
-            self.output_handler.eink_enabled = eink_enabled
+        # Switch recipe mode with the prompt. The panel is deliberately not
+        # cleared: it is bistable, so the last recipe stays readable after
+        # leaving recipe mode. A new recipe session shows nothing until its
+        # first recipe is generated.
+        if recipe_mode is not None and hasattr(self, 'output_handler'):
+            self.output_handler.recipe_mode = recipe_mode
         if rag_enabled is not None and hasattr(self, 'output_handler'):
             self.output_handler.rag_enabled = rag_enabled
 

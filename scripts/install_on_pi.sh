@@ -59,38 +59,41 @@ for d in moonshine_v1_tiny piper silero_vad; do
     || warn "speech model missing: models/$d (run the upstream download scripts)"
 done
 
-# Optional e-ink recipe screen. Non-fatal on purpose: most builds do not have
-# the panel fitted. The driver itself is bundled (scripts/waveshare_epd, copied
-# in step [2/6]); these are only the extra Python libs it needs at runtime.
-# See README "Recipe screen (optional e-ink)".
+# Optional hardware: the e-ink recipe screen and the HAT's status LEDs. Both
+# are non-fatal on purpose, since not every build has them. The e-ink driver
+# is bundled (scripts/waveshare_epd, copied in step [2/6]); these are the
+# Python libraries it needs at runtime. spidev also drives the LEDs.
 "$AGENT_DIR/venv/bin/python" -c "import PIL" >/dev/null 2>&1 \
   && ok "Pillow present (e-ink rendering)" \
-  || note "Pillow missing - only for the optional e-ink screen (pip install pillow)"
+  || note "Pillow missing - only needed for the e-ink screen (pip install pillow)"
 for m in gpiozero spidev lgpio; do
   "$AGENT_DIR/venv/bin/python" -c "import $m" >/dev/null 2>&1 \
     && ok "$m present (e-ink GPIO/SPI backend)" \
-    || note "$m missing - only for the optional e-ink screen (Pi 5 needs gpiozero+lgpio+SPI)"
+    || note "$m missing - needed for the e-ink screen and, in the case of spidev, the status LEDs"
 done
-# The libs are useless without the SPI bus itself: DietPi ships with SPI off,
-# and then no /dev/spidev node exists at all and the panel cannot be opened.
-SPIDEV=$(ls /dev/spidev*.0 2>/dev/null | head -1)
-if [ -n "$SPIDEV" ]; then
-  ok "SPI enabled ($SPIDEV)"
+# The libraries are useless without the header SPI bus. DietPi ships with it
+# off. Test for /dev/spidev0.0 specifically: a Pi 5 also exposes spidev10.0,
+# an SPI controller on the SoC that exists regardless and is not the header.
+if [ -e /dev/spidev0.0 ]; then
+  ok "header SPI enabled (/dev/spidev0.0)"
 else
-  note "no /dev/spidev* - SPI is disabled. Only needed for the e-ink screen."
+  note "header SPI is off (no /dev/spidev0.0) - needed for the e-ink screen and the LEDs"
   note "  enable with: dietpi-config > Advanced Options > SPI state, then reboot"
 fi
 
 # ------------------------------------------------------------------ overlay
 echo
 echo "[2/6] Copying our files over the agent"
-cp "$REPO"/scripts/*.py "$REPO"/scripts/*.sh "$REPO"/prompts.json "$AGENT_DIR/" \
-  || die "copy failed"
-cp "$REPO/scripts/config.sh" "$AGENT_DIR/" || die "copy of config.sh failed"
+# Everything in scripts/ except this installer, which has no business there.
+for f in "$REPO"/scripts/*.py "$REPO"/scripts/*.sh; do
+  [ "$(basename "$f")" = "install_on_pi.sh" ] && continue
+  cp "$f" "$AGENT_DIR/" || die "copy failed: $f"
+done
+cp "$REPO/prompts.json" "$AGENT_DIR/" || die "copy of prompts.json failed"
 chmod +x "$AGENT_DIR"/start_*.sh "$AGENT_DIR"/download_embedding_model.sh "$AGENT_DIR"/startup_script.sh
 # Directly-runnable helpers: a Windows checkout can drop the exec bit, so
 # set it here rather than relying on how the file arrived.
-chmod +x "$AGENT_DIR"/check_gpio.sh "$AGENT_DIR"/test_eink.py 2>/dev/null
+chmod +x "$AGENT_DIR"/check_gpio.sh "$AGENT_DIR"/test_eink.py "$AGENT_DIR"/test_leds.py 2>/dev/null
 ok "scripts, prompts.json and config.sh"
 
 # Bundled e-ink driver (optional hardware). Copy its contents idempotently so a
@@ -124,7 +127,9 @@ fi
 # -------------------------------------------------------------- boot script
 echo
 echo "[4/6] Installing the boot script"
-if [ -f "$CUSTOM" ]; then
+if [ -f "$CUSTOM" ] && cmp -s "$AGENT_DIR/startup_script.sh" "$CUSTOM"; then
+  ok "custom.sh already up to date"
+elif [ -f "$CUSTOM" ]; then
   cp "$CUSTOM" "$CUSTOM.$STAMP.bak"
   ok "backed up existing custom.sh to custom.sh.$STAMP.bak"
 fi

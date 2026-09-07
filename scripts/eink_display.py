@@ -124,6 +124,23 @@ class EinkRecipeDisplay:
         self._ensure_ready()
         self._render_now(text)
 
+    def available(self):
+        """Probe the panel once: import the driver and claim its control pins.
+
+        Returns False, and stays False for the session, if the driver or the
+        hardware is missing. The agent uses this to decide up front whether a
+        recipe can go to the screen or has to be read out instead.
+        """
+        if self._init_failed:
+            return False
+        try:
+            self._ensure_ready()
+            return True
+        except Exception as e:
+            self._log(f"panel unavailable, disabling e-ink for this session: {e}")
+            self._init_failed = True
+            return False
+
     def clear(self):
         """Blank the panel. Optional; not used by default (see full_reset)."""
         if self._init_failed:

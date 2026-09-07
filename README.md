@@ -31,7 +31,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 
 | File | New/modified | Purpose |
 | ---- | ------------ | ------- |
-| `prompts.json` | modified | The three prompts behind the rotary dial (with an `eink` flag on Campfire Recipes to print the recipi on an e-inkt screen) |
+| `prompts.json` | modified | The three prompts behind the rotary dial (Campfire Recipes carries `"mode": "recipe"`, which prints the recipe on the e-ink screen) |
 | `scripts/rag_ingest.py` | new | Turns documents into the search index (chunks + embeddings) |
 | `scripts/rag.py` | new | Looks up the relevant chunks during a conversation |
 | `scripts/rag_test.py` | new | Sanity-checks a built index with test questions |
@@ -320,7 +320,7 @@ It is wired to stay out of the way:
 - **One recipe, then it stops.** Once a recipe has been handed over, the agent stops listening and stops generating, so nothing talks over you while you cook. Press the **interrupt button** to start a fresh session: same mode, cleared context, and it asks for your ingredients again. Turning the dial does the same. A one-line clarifying reply does not count as a recipe, so being asked what you have does not end the session.
 - **Fail-safe.** If the panel is missing, unplugged, or the driver isn't installed, drawing is skipped silently and the voice agent runs exactly as before. It also runs in a background thread, so the ~6 s e-ink refresh never holds up the conversation.
 
-**How it fits in the code.** `prompts.json` carries an `"eink": true` flag on the Campfire Recipes prompt; the CLI passes that flag to the agent on the initial prompt and on every dial switch. When a recipe answer finishes in that mode, `scripts/voice_agent.py` hands the text to `scripts/eink_display.py`, which lays it out and draws it. The renderer auto-shrinks the font until the whole recipe fits one 800×480 screen — there is no page two to scroll to without power, which is also why the Campfire Recipes prompt is written to keep recipes short (a title, total time, ≤6 ingredients and ≤6 steps).
+**How it fits in the code.** `prompts.json` carries `"mode": "recipe"` on the Campfire Recipes prompt; the CLI passes that to the agent on the initial prompt and on every dial switch. Recipe mode means three things: the recipe is drawn on the panel, the session ends after one recipe, and the interrupt button starts the next. If the panel is missing or fails to come up, the recipe is read out instead, so nothing is lost. When a recipe answer finishes in that mode, `scripts/voice_agent.py` hands the text to `scripts/eink_display.py`, which lays it out and draws it. The renderer auto-shrinks the font until the whole recipe fits one 800×480 screen — there is no page two to scroll to without power, which is also why the Campfire Recipes prompt is written to keep recipes short (a title, total time, ≤6 ingredients and ≤6 steps).
 
 **The driver is bundled.** The Waveshare 7.5" V2 driver lives in this repo at [`scripts/waveshare_epd/`](scripts/waveshare_epd) (`epd7in5_V2.py` + `epdconfig.py`, MIT-licensed, from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper)), and `install_on_pi.sh` copies it into the agent directory — so there is nothing to fetch. 
 

@@ -1,3 +1,7 @@
-# Shell scripts must keep Unix line endings, even when edited on Windows —
-# CRLF breaks bash on the Pi.
-*.sh text eol=lf
+# Files that run or are parsed on the Pi must keep Unix line endings, however
+# they were edited. CRLF breaks bash on a shell script, and turns a Python
+# shebang into "python3\r" so ./script.py fails with "bad interpreter".
+*.sh   text eol=lf
+*.py   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
