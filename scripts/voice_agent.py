@@ -635,6 +635,7 @@ class LLmToAudio:
             if action == 'retry':
                 self._say(voice_agent_utils.RECIPE_RETRY)
                 return
+            self._say(voice_agent_utils.RECIPE_COOKING)
             user_prompt = voice_agent_utils.RECIPE_REQUEST.format(payload)
             expect_recipe = True
 

@@ -30,10 +30,17 @@ RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe. Enjoy your outdoor
 RECIPE_READBACK = "I heard: {}. Is that right?"
 RECIPE_RETRY = "Alright, tell me your ingredients again."
 # What the model receives once the list is confirmed; {} is the list.
+# Spoken after the list is confirmed, before the model starts: the thinking
+# pause otherwise begins in silence.
+RECIPE_COOKING = "Thanks. Give me a moment to put a recipe together."
 RECIPE_REQUEST = "My ingredients: {}. Write the recipe."
 RECIPE_YES_WORDS = {'yes', 'yeah', 'yep', 'yup', 'correct', 'right', 'exactly', 'ok',
                     'okay', 'sure', 'fine', 'go', 'cook', 'proceed', 'perfect', 'good'}
 RECIPE_NO_WORDS = {'no', 'nope', 'nah', 'wrong', 'incorrect', 'not'}
+# Words that may precede a correction ("no, that is not right, pasta and cheese")
+# and are dropped to find the list that follows.
+_NO_PREAMBLE = RECIPE_NO_WORDS | {"that's", "thats", "that", "is", "it's", "its", "the",
+                                   "those", "are", "right", "wrong", "correct", "quite"}
 
 
 def classify_confirmation(text):
@@ -48,6 +55,15 @@ def classify_confirmation(text):
     if words & RECIPE_YES_WORDS:
         return 'yes'
     return 'other'
+
+
+def strip_leading_no(text):
+    """Drop a leading "no, that is not right" preamble; return what follows."""
+    tokens = text.split()
+    i = 0
+    while i < len(tokens) and i < 6 and tokens[i].strip(",.!?;:").lower() in _NO_PREAMBLE:
+        i += 1
+    return ' '.join(tokens[i:]).strip(',.;: ')
 
 
 class RecipeIntake:
@@ -77,6 +93,13 @@ class RecipeIntake:
             confirmed, self.pending = self.pending, None
             return 'cook', confirmed
         if verdict == 'no':
+            # The correction often comes in the same breath: "no, pasta and
+            # cheese". Use what follows the no as the new list when there is
+            # enough of it; otherwise ask again.
+            rest = strip_leading_no(text)
+            if len(rest.split()) >= 3:
+                self.pending = rest
+                return 'readback', rest
             self.pending = None
             return 'retry', ''
         self.pending = text
