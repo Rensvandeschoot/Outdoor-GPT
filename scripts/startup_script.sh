@@ -58,7 +58,7 @@ case $MODE in
         [ "${VERBOSE:-0}" = "1" ] && VERBOSE_FLAG="--verbose"
         # The agent waits for both servers itself (~30s retry each), so the
         # background starts above do not need a sleep here.
-        python voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG
+        python voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG
         ;;
     *)
         echo "Invalid choice. Exiting."

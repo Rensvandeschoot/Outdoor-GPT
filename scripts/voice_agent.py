@@ -596,30 +596,17 @@ class LLmToAudio:
 
     
 
-    def _screen_available(self):
-        """Whether the e-ink panel can be used this session.
+    def _render_eink(self, text):
+        """Draw a finished recipe on the e-ink panel.
 
-        Creates the display object on first call and probes it once: importing
-        the driver and claiming its pins. A panel that fails to come up stays
-        unavailable for the session, and recipes are read out instead.
+        The display object is created on first use. Drawing runs in a
+        background thread and swallows hardware errors, so a missing or
+        unplugged panel can never block or crash the agent.
         """
         try:
             if self.eink is None:
                 from eink_display import EinkRecipeDisplay
                 self.eink = EinkRecipeDisplay(verbose=self.verbose)
-            return self.eink.available()
-        except Exception as e:
-            self._info(f">> e-ink unavailable: {e}")
-            return False
-
-    def _render_eink(self, text):
-        """Draw a finished recipe on the e-ink panel.
-
-        Only called after _screen_available() returned True. Drawing runs in a
-        background thread and swallows hardware errors, so it can never block
-        or crash the agent.
-        """
-        try:
             self.eink.render_async(text)
         except Exception as e:
             self._info(f">> e-ink render skipped: {e}")
@@ -700,12 +687,10 @@ class LLmToAudio:
         )
         text_chunks = []
         raw_chunks = []  # unmodified LLM text (keeps newlines) for the e-ink screen
-        # Recipe mode. The model opens the recipe with RECIPE_MARKER. With a
-        # working screen the recipe goes there and is not read out; without one
-        # it is read out after all, so a missing or failed panel never loses a
-        # recipe. Decided before streaming starts, because speech begins before
-        # the reply is complete.
-        screen_ok = self.recipe_mode and self._screen_available()
+        # Recipe mode. The model opens the recipe with RECIPE_MARKER; everything
+        # after it goes to the screen and is not read out. We cannot know a
+        # reply is the recipe until its first characters arrive, so speech is
+        # held back until the marker is either matched or ruled out.
         marker = voice_agent_utils.RECIPE_MARKER
         marker_seen = False       # this reply is the recipe
         route_decided = False     # marker matched or ruled out
@@ -735,7 +720,7 @@ class LLmToAudio:
                         marker_seen = True
                         route_decided = True
                         rest = probe[len(marker):]
-                        if not screen_ok and rest.strip():
+                        if not self.recipe_mode and rest.strip():
                             self._process_text_chunk(rest)
                         held_back = ''
                     elif len(probe) < len(marker) and marker.startswith(probe):
@@ -744,7 +729,7 @@ class LLmToAudio:
                         route_decided = True
                         self._process_text_chunk(held_back)
                         held_back = ''
-                elif not (marker_seen and screen_ok):
+                elif not (marker_seen and self.recipe_mode):
                     self._process_text_chunk(text_chunk)
 
         self.is_generating = False
@@ -767,8 +752,7 @@ class LLmToAudio:
             self._info(">> Interrupted, skipping finish processing")
             return
 
-        withheld = marker_seen and screen_ok
-        if withheld:
+        if marker_seen and self.recipe_mode:
             # The recipe went to the screen, so say one short line rather than
             # leaving the caller with silence.
             self._process_text_chunk(voice_agent_utils.RECIPE_ON_SCREEN_MESSAGE)
@@ -780,10 +764,9 @@ class LLmToAudio:
             # one-line clarifying question is neither.
             is_recipe = marker_seen or len(recipe_text.splitlines()) > 1
             if recipe_text and is_recipe:
-                if screen_ok:
-                    self._render_eink(recipe_text)
-                # One recipe per session, screen or not: the run loop stops
-                # listening here and the interrupt button starts a fresh one.
+                self._render_eink(recipe_text)
+                # One recipe per session: the run loop stops listening here
+                # and the interrupt button starts a fresh one.
                 self.recipe_delivered = True
 
         # Process any remaining text

@@ -19,7 +19,7 @@ DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
 # is stripped before anything is displayed or stored.
 RECIPE_MARKER = "<<RECIPE>>"
 # Spoken instead of the recipe, so the phone does not just fall silent.
-RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe and enjoy your outdoor meal."
+RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe. Enjoy your outdoor-meal."
 DEFAULT_EXIT_COMMAND = "please quit"
 
 
