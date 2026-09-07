@@ -22,7 +22,7 @@ This project builds on the work of others:
 
 The stock edge_voice_agent answers purely from the language model itself. We add two things:
 
-1. **Three outdoor prompts** behind the rotary dial (`prompts.json` in the repo root — edit this file to change what the assistants do).
+1. **Three outdoor prompts** behind the rotary dial (`prompts.json` in the repo root — edit this file to change what the assistants do). Besides `system_prompt` and `start_message`, a prompt can carry `"mode": "recipe"` (draws on the e-ink panel, one recipe per session), `"rag": false` (no retrieval for that mode) and `"silence_seconds"` (how long to wait after you stop talking before answering; Campfire Recipes uses 1.5 because an ingredient list is spoken with longer pauses than a question). Each applies from the moment the dial selects that mode.
 2. **RAG** (Retrieval-Augmented Generation): the documents in `docs/` are cut into chunks and converted into embeddings stored on the SD card. For every spoken question, the system looks up the best-matching pieces and hands them to the language model as context. This lets a small offline model give answers grounded in the actual manuals.
 
 ### Repository layout
@@ -201,7 +201,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `RAG_INDEX` | `rag_index` | Where the index lives |
 | `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
-| `SILENCE_SECONDS` | `1.5` | How long the phone waits after you stop talking before it answers. Upstream's 0.7 cut off ingredient lists spoken with natural pauses; every reply is delayed by this amount, so keep it as low as the pauses allow |
+| `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
 `config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. 

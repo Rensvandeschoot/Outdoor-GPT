@@ -39,10 +39,11 @@ AUDIO_OUT=0
 SPEAKING_RATE=1.
 
 # Seconds of silence before the phone decides you have finished talking.
-# The upstream default of 0.7 suits quick questions but cuts off a list of
-# ingredients spoken with natural pauses. Every reply is delayed by this
-# amount, so do not go higher than the pauses actually need.
-SILENCE_SECONDS=1.5
+# This is the default; a prompt in prompts.json can set its own with
+# "silence_seconds" (Campfire Recipes uses 1.5, since an ingredient list is
+# spoken with longer pauses than a question). Every reply is delayed by
+# this amount, so keep it as low as the pauses allow.
+SILENCE_SECONDS=0.7
 
 # Set to 1 to run the agent with --verbose at boot. Every question then logs
 # the retrieved chunks ("RAG context injected") to the journal, which is how

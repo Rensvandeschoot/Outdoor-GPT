@@ -90,6 +90,11 @@ def main():
     if initial_prompt is None:
         initial_prompt = prompt_selector.get_random_prompt()
 
+    # A prompt may set its own silence window (silence_seconds in prompts.json);
+    # the CLI value is the default for the ones that do not.
+    def silence_for(prompt):
+        return float(prompt.get('silence_seconds', args.end_of_utterance_duration))
+
     t1 = time.time()
     print(">> Initializing Voice Agent <<")
     va = VoiceAgent(verbose=args.verbose)
@@ -116,7 +121,7 @@ def main():
         disable_partials=args.disable_partials,
         language=args.language,
         min_partial_duration=args.min_partial_duration,
-        end_of_utterance_duration=args.end_of_utterance_duration,
+        end_of_utterance_duration=silence_for(initial_prompt),
         verbose=args.verbose,
         printer=user_interaction_handler
     )
@@ -228,7 +233,8 @@ def main():
             system_prompt=new_prompt['system_prompt'],
             start_message=new_prompt['start_message'],
             recipe_mode=new_prompt.get('mode') == 'recipe',
-            rag_enabled=new_prompt.get('rag', True)
+            rag_enabled=new_prompt.get('rag', True),
+            silence_seconds=silence_for(new_prompt)
         )
 
     # Setup GPIO interrupt button via gpio_handler

@@ -1297,7 +1297,7 @@ class VoiceAgent():
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
 
-    def full_reset_with_prompt(self, system_prompt=None, start_message=None, recipe_mode=None, rag_enabled=None):
+    def full_reset_with_prompt(self, system_prompt=None, start_message=None, recipe_mode=None, rag_enabled=None, silence_seconds=None):
         """Full reset with optional new system prompt and start message."""
         self._info("Full reset requested")
 
@@ -1309,6 +1309,11 @@ class VoiceAgent():
             self.output_handler.recipe_mode = recipe_mode
         if rag_enabled is not None and hasattr(self, 'output_handler'):
             self.output_handler.rag_enabled = rag_enabled
+        # How long to wait after the caller stops talking. Read by the listening
+        # loop on every check, so it can change with the mode: an ingredient
+        # list needs longer pauses than a quick question.
+        if silence_seconds is not None and hasattr(self, 'input_handler'):
+            self.input_handler.end_of_utterance_duration = silence_seconds
 
         self.input_handler.acquire_stream_lock()
         try:
