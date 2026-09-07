@@ -307,13 +307,20 @@ class EinkRecipeDisplay:
             panel_img = img
 
         with spi_bus.LOCK:  # keep the LEDs off the bus while we draw
-            self._epd.init()                 # wake from deep sleep (safe every draw)
-            if self._first_draw:
-                self._epd.Clear()            # one clean sweep on the very first draw
-                self._first_draw = False
-            self._epd.display(self._epd.getbuffer(panel_img))
             try:
-                self._epd.sleep()            # bistable: image holds with the power off
-            except Exception:
-                pass
+                self._epd.init()             # wake from deep sleep (safe every draw)
+                if self._first_draw:
+                    self._epd.Clear()        # one clean sweep on the very first draw
+                    self._first_draw = False
+                self._epd.display(self._epd.getbuffer(panel_img))
+            finally:
+                # Always sleep, a failed draw included. init() starts the panel's
+                # boost converter; without this the converter keeps running for
+                # the rest of the session, and on crank power that standing load
+                # is the difference between working and browning out. display()
+                # does raise in practice: ReadBusy times out on a bad connection.
+                try:
+                    self._epd.sleep()        # bistable: image holds with the power off
+                except Exception:
+                    pass
         self._log(f"drew recipe at {size}px in {len(items)} lines, orientation={ORIENTATION}")

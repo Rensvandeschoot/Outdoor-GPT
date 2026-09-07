@@ -15,8 +15,6 @@
 # paths from config.sh in the agent directory, so a missing or broken config
 # can never break the stock modes.
 
-echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
-
 # The one path this script has to know by itself; everything else is in config.sh.
 AGENT_DIR=/root/edge_voice_agent
 
@@ -29,6 +27,23 @@ MODE=3
 
 # Platform: rpi5 or opi5
 PLATFORM=${PLATFORM:-rpi5}
+
+# CPU governor. CrankGPT pins every core at maximum clock with "performance",
+# and modes 1 and 2 keep that unchanged. Mode 3 defaults to "ondemand": on
+# crank power a permanently boosted Pi 5 burns headroom while it sits idle,
+# and that headroom is what the audio stage needs the moment the agent starts
+# speaking. Set GOVERNOR in config.sh to override.
+if [ "$MODE" = "3" ]; then
+    GOVERNOR=${GOVERNOR:-ondemand}
+else
+    GOVERNOR=performance
+fi
+if grep -qw "$GOVERNOR" /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors 2>/dev/null; then
+    echo "$GOVERNOR" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+    echo "CPU governor: $GOVERNOR"
+else
+    echo "CPU governor '$GOVERNOR' not available on this kernel; left unchanged"
+fi
 
 case $MODE in
     1)

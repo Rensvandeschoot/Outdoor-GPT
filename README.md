@@ -204,6 +204,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
 | `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
+| `GOVERNOR` | `ondemand` | CPU governor applied by the boot script in mode 3. `ondemand` clocks down while the phone waits, which matters on crank power: a Pi 5 held at maximum clock spends its headroom on idling instead of on the audio stage. Use `performance` for the fastest replies on mains power |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
@@ -253,7 +254,7 @@ Inside the phone there are no terminals: everything must start by itself when th
 | 2 | Translation agent (unchanged) |
 | **3** | **OutdoorGPT: chat LLM (context 4096) + embedding server + agent with `--rag_index`** |
 
-Mode 3 keeps everything the other modes do — the `performance` governor, `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
+Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. The one thing it changes is the CPU governor: modes 1 and 2 keep CrankGPT's `performance`, while mode 3 applies `GOVERNOR` from `config.sh` (`ondemand` by default) so the phone does not hold every core at maximum clock while it waits for you to speak. Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
 
 DietPi must be set to run the custom script in the first place. Check with:
 

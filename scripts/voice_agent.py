@@ -497,6 +497,13 @@ class LLmToAudio:
         try:
             self._info(f"Speaking: {text}")
 
+            # Open the output stream before synthesising rather than after.
+            # Starting the stream powers up the codec and the speaker amplifier;
+            # landing that current step on top of the CPU peak of TTS synthesis
+            # is more than a hand crank can supply. Idempotent, so the call
+            # before the write below stays as the safety net.
+            self._start_audio_stream()
+
             # Protect TTS synthesis with lock to prevent model swap during synthesis
             with self._tts_lock:
                 # Re-check interrupt inside lock (model swap waits for this lock)

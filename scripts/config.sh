@@ -43,6 +43,12 @@ AUDIO_IN=1
 AUDIO_OUT=0
 SPEAKING_RATE=1.
 
+# CPU governor for mode 3, applied by the boot script. "ondemand" clocks down
+# when idle, which matters on crank power: a Pi 5 held at maximum clock burns
+# the headroom the audio stage needs when the agent starts speaking. Use
+# "performance" for the fastest replies on mains power.
+GOVERNOR=ondemand
+
 # Seconds of silence before the phone decides you have finished talking.
 # This is the default; a prompt in prompts.json can set its own with
 # "silence_seconds" (Campfire Recipes uses 1.5, since an ingredient list is
