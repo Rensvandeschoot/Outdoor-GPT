@@ -1,6 +1,7 @@
 import argparse
 import json
 import random
+import re
 
 DEFAULT_LLM_SERVER_URL = "http://localhost:8080/v1"
 DEFAULT_LLM_SERVER_MODEL = "dummy"
@@ -22,6 +23,65 @@ RECIPE_MARKER = "<<RECIPE>>"
 # Spoken instead of the recipe, so the phone does not just fall silent.
 RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe. Enjoy your outdoor-meal."
 
+# Recipe intake. Speech recognition mis-hears an accent, and a recipe built on
+# a mis-heard list is a random recipe. So the list is read back from the
+# recogniser's own transcript and confirmed before the model ever sees it.
+# {} is the transcript.
+RECIPE_READBACK = "I heard: {}. Is that right?"
+RECIPE_RETRY = "Alright, tell me your ingredients again."
+# What the model receives once the list is confirmed; {} is the list.
+RECIPE_REQUEST = "My ingredients: {}. Write the recipe."
+RECIPE_YES_WORDS = {'yes', 'yeah', 'yep', 'yup', 'correct', 'right', 'exactly', 'ok',
+                    'okay', 'sure', 'fine', 'go', 'cook', 'proceed', 'perfect', 'good'}
+RECIPE_NO_WORDS = {'no', 'nope', 'nah', 'wrong', 'incorrect', 'not'}
+
+
+def classify_confirmation(text):
+    """Was that a yes, a no, or something else (probably a new list)?
+
+    A no wins over a yes, so "no, that is not right" is a no. Anything with
+    neither is treated as a fresh ingredient list by the caller.
+    """
+    words = set(re.findall("[a-z']+", text.lower()))
+    if words & RECIPE_NO_WORDS:
+        return 'no'
+    if words & RECIPE_YES_WORDS:
+        return 'yes'
+    return 'other'
+
+
+class RecipeIntake:
+    """Collects the ingredient list and has it confirmed before cooking.
+
+    receive(transcript) returns one of:
+        ('readback', text)  read text back and ask whether it is right
+        ('retry', '')       the caller said no: ask for the list again
+        ('cook', text)      confirmed: text is the list to cook from
+    A transcript that is neither yes nor no while a list is pending replaces
+    that list and is read back in turn.
+    """
+
+    def __init__(self):
+        self.pending = None
+
+    def reset(self):
+        self.pending = None
+
+    def receive(self, transcript):
+        text = transcript.strip()
+        if self.pending is None:
+            self.pending = text
+            return 'readback', text
+        verdict = classify_confirmation(text)
+        if verdict == 'yes':
+            confirmed, self.pending = self.pending, None
+            return 'cook', confirmed
+        if verdict == 'no':
+            self.pending = None
+            return 'retry', ''
+        self.pending = text
+        return 'readback', text
+
 
 class RecipeRouter:
     """Decides, chunk by chunk, whether a streamed reply may be spoken.
@@ -34,12 +94,18 @@ class RecipeRouter:
     recipe mode a stray marker is stripped and the text is spoken anyway.
     """
 
-    def __init__(self, marker, recipe_mode):
+    def __init__(self, marker, recipe_mode, expect_recipe=False):
         self.marker = marker
         self.recipe_mode = recipe_mode
         self.marker_seen = False
         self._decided = False
         self._held = ''
+        if expect_recipe:
+            # The caller already knows this reply is the recipe (the list was
+            # confirmed and requested), so withhold it from the first character
+            # whether or not the model remembers the marker.
+            self.marker_seen = True
+            self._decided = True
 
     def feed(self, text):
         if self._decided:

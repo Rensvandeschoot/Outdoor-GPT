@@ -77,6 +77,8 @@ class LLmToAudio:
         # button starts the next one. Set per prompt (the "mode" key in
         # prompts.json) and again on every dial or keyboard switch.
         self.recipe_mode = recipe_mode
+        # Collects and confirms the ingredient list before the model sees it.
+        self.recipe_intake = voice_agent_utils.RecipeIntake()
         self.eink = None          # EinkRecipeDisplay, created on first use
         # Retrieval is per mode: it suits lookups (survival, first aid) and
         # hurts invention. For an ingredient list the retrieved chunks are
@@ -197,6 +199,7 @@ class LLmToAudio:
             {'role': 'system', 'content': self.system_prompt},
         ]
         self.recipe_delivered = False
+        self.recipe_intake.reset()
         self.is_generating = False
 
         # Text processing
@@ -590,6 +593,15 @@ class LLmToAudio:
 
     
 
+    def _say(self, text):
+        """Speak a fixed line outside an LLM turn, logged like any reply."""
+        self.interrupt_event.clear()
+        self._start_audio_stream()
+        self.assistant_printer.start()
+        self.assistant_printer.print(text, partial=False)
+        self._speak_sentence(text, wait_for_completion=True)
+        self._finish_processing()
+
     def _render_eink(self, text):
         """Draw a finished recipe on the e-ink panel.
 
@@ -607,6 +619,24 @@ class LLmToAudio:
 
     def process_prompt(self, user_prompt):
         """Process a prompt through LLM and stream to Piper."""
+
+        # Recipe intake. Speech recognition mis-hears an accent, and a recipe
+        # built on a mis-heard list is a random recipe. So in recipe mode the
+        # list is read back from the transcript and confirmed first; until
+        # then nothing reaches the model or the history. Once confirmed, the
+        # model gets a fixed request and its reply is the recipe by
+        # definition, marker or not.
+        expect_recipe = False
+        if self.recipe_mode and not self.recipe_delivered:
+            action, payload = self.recipe_intake.receive(user_prompt)
+            if action == 'readback':
+                self._say(voice_agent_utils.RECIPE_READBACK.format(payload))
+                return
+            if action == 'retry':
+                self._say(voice_agent_utils.RECIPE_RETRY)
+                return
+            user_prompt = voice_agent_utils.RECIPE_REQUEST.format(payload)
+            expect_recipe = True
 
         if self.single_turn:
             self.messages = [{'role': 'system', 'content': self.system_prompt}]
@@ -684,7 +714,7 @@ class LLmToAudio:
         # Recipe mode: the model opens the recipe with RECIPE_MARKER and the rest
         # goes to the screen, not the speaker. The router holds speech back
         # until the marker is matched or ruled out.
-        router = voice_agent_utils.RecipeRouter(voice_agent_utils.RECIPE_MARKER, self.recipe_mode)
+        router = voice_agent_utils.RecipeRouter(voice_agent_utils.RECIPE_MARKER, self.recipe_mode, expect_recipe)
         for chunk in llm_response_stream:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
