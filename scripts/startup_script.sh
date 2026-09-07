@@ -52,6 +52,10 @@ case $MODE in
         echo "Starting embedding server (RAG)..."
         sh start_embedding_server.sh > /var/log/embedding-server.log 2>&1 &
 
+        # Conversation logs would otherwise pile up on the SD card for years;
+        # keep the newest LOG_KEEP (config.sh) and drop the rest.
+        ls -t logs/conversation_*.txt 2>/dev/null | tail -n +$(( ${LOG_KEEP:-50} + 1 )) | xargs -r rm -f
+
         echo "Starting OutdoorGPT..."
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""

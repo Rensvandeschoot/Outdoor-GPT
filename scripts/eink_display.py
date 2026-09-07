@@ -28,6 +28,7 @@ Requires, on the Pi only:
 import os
 import threading
 
+import device_settings
 import spi_bus  # shared SPI lock (panel vs the HAT LEDs)
 
 # Panel geometry (Waveshare 7.5" V2). The physical panel buffer is ALWAYS
@@ -37,15 +38,10 @@ import spi_bus  # shared SPI lock (panel vs the HAT LEDs)
 EPD_WIDTH = 800
 EPD_HEIGHT = 480
 
-# "landscape" -> render straight onto an 800x480 canvas (original behaviour).
-# "portrait"  -> render onto a 480x800 canvas, then rotate into the 800x480
-#                buffer the panel expects.
-ORIENTATION = "portrait"
-
-# Which way to rotate the portrait canvas into the landscape buffer. This
-# depends on which way the panel is physically mounted -- if the text comes
-# out upside down, change this to 90.
-ROTATE_DEGREES = 270
+# Orientation and rotation are per device (they depend on how the panel is
+# mounted) and live in device_settings.py.
+ORIENTATION = device_settings.EINK_ORIENTATION
+ROTATE_DEGREES = device_settings.EINK_ROTATE_DEGREES
 
 if ORIENTATION == "portrait":
     RENDER_WIDTH, RENDER_HEIGHT = EPD_HEIGHT, EPD_WIDTH   # 480 x 800
@@ -321,27 +317,3 @@ class EinkRecipeDisplay:
             except Exception:
                 pass
         self._log(f"drew recipe at {size}px in {len(items)} lines, orientation={ORIENTATION}")
-
-
-# Manual smoke test on the Pi:  python3 eink_display.py
-if __name__ == "__main__":
-    sample = (
-        "Foil-pack trout & potatoes\n"
-        "Time: 25 min\n"
-        "Ingredients:\n"
-        "- 1 trout, cleaned\n"
-        "- 1 potato, thinly sliced\n"
-        "- 1 knob butter\n"
-        "- a few sprigs wild thyme\n"
-        "- salt, pepper\n"
-        "Steps:\n"
-        "1. Lay fish and potato on a double sheet of foil, butter and thyme on top, season.\n"
-        "2. Fold into a sealed packet.\n"
-        "3. Set on hot embers, not open flame, for 10 min.\n"
-        "4. Flip; cook another 8-10 min.\n"
-        "5. Open carefully; done when the fish flakes and the potato is tender."
-    )
-    disp = EinkRecipeDisplay(verbose=True)
-    disp.render_async(sample)
-    if disp._worker:
-        disp._worker.join()

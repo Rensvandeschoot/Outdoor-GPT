@@ -30,13 +30,13 @@ fi
 
 # Notes:
 # - the batch size must cover a whole chunk, since an embedding cannot be split
-# - --host 0.0.0.0 lets another machine on the network use this server, for
-#   example to build the index with rag_ingest.py --embedding_server_url
+# - EMBED_HOST (config.sh) is the interface to listen on: 127.0.0.1 by default,
+#   0.0.0.0 to let a PC on the network build the index against this server
 nice -n 10 \
   "$LLAMA_SERVER" -m "$MODEL" \
   --embedding \
   --pooling mean \
   -c 512 -b 512 -ub 512 \
   --threads 2 \
-  --host 0.0.0.0 \
+  --host ${EMBED_HOST:-127.0.0.1} \
   --port $PORT

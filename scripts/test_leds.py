@@ -17,16 +17,8 @@ CE line toggles. If nothing lights up, try the other one:
 import argparse
 import time
 
-N_LEDS = 3
-
-
-def frame(colours, brightness):
-    """One full APA102 update: start frame, one frame per LED, end frame."""
-    data = [0x00, 0x00, 0x00, 0x00]                  # start
-    for (r, g, b) in colours:
-        data += [0xE0 | (brightness & 0x1F), b, g, r]  # APA102 order is B,G,R
-    data += [0xFF] * ((N_LEDS + 15) // 16 + 1)       # end frame
-    return data
+# The frame encoding lives in leds.py; this test only supplies the colours.
+from leds import N_LEDS, apa102_frame as frame
 
 
 def main():

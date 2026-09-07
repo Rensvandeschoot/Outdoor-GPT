@@ -19,24 +19,31 @@ import math
 import threading
 import time
 
+import device_settings
 import spi_bus
 
-N_LEDS = 3
-SPI_BUS = 0
-SPI_DEVICE = 1
-MAX_BRIGHTNESS = 8      # 0-31; kept low because the handset is used close up, often in the dark
-
-# (r, g, b) per state. "thinking" pulses; the rest are steady.
-COLOURS = {
-    'listening': (0, 110, 0),
-    'thinking':  (0, 60, 255),
-    'speaking':  (255, 80, 0),
-    'done':      (180, 0, 255),
-    'off':       (0, 0, 0),   # only on shutdown
-}
+# Bus, colours and brightness are per device and live in device_settings.py.
+N_LEDS = device_settings.LED_COUNT
+SPI_BUS = device_settings.LED_SPI_BUS
+SPI_DEVICE = device_settings.LED_SPI_DEVICE
+MAX_BRIGHTNESS = device_settings.LED_MAX_BRIGHTNESS
+COLOURS = device_settings.LED_COLOURS
 
 POLL_INTERVAL = 0.05    # how often we look at the agent's state
 PULSE_PERIOD = 1.6      # seconds for one full breath while thinking
+
+
+def apa102_frame(colours, brightness):
+    """One complete APA102 update for a list of (r, g, b) tuples, one per LED.
+
+    Start frame, one 4-byte frame per LED (brightness, then B, G, R in that
+    order), and an end frame long enough to clock the data through.
+    """
+    data = [0x00, 0x00, 0x00, 0x00]
+    for (r, g, b) in colours:
+        data += [0xE0 | (brightness & 0x1F), b, g, r]
+    data += [0xFF] * ((len(colours) + 15) // 16 + 1)
+    return data
 
 
 class StatusLeds:
@@ -78,11 +85,7 @@ class StatusLeds:
             return
         if (rgb, brightness) == self._last_written:
             return
-        r, g, b = rgb
-        data = [0x00, 0x00, 0x00, 0x00]
-        for _ in range(N_LEDS):
-            data += [0xE0 | (brightness & 0x1F), b, g, r]   # APA102 order: B,G,R
-        data += [0xFF] * ((N_LEDS + 15) // 16 + 1)
+        data = apa102_frame([rgb] * N_LEDS, brightness)
         try:
             with spi_bus.LOCK:
                 self._spi.writebytes(data)

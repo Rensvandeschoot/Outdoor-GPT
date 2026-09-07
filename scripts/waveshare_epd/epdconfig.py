@@ -6,12 +6,10 @@
 #
 # 1. Control-pin mapping. The defaults (RST 17, BUSY 24, PWR 18) collide with
 #    OutdoorGPT's rotary dial (GPIO 17 and 24) and the ReSpeaker 2-Mic I2S
-#    audio (GPIO 18), so we use free pins instead:
-#        RST  17 -> 6
-#        BUSY 24 -> 5
-#        PWR  18 -> 26
-#    DC (25), CS (8) and the hardware SPI pins (MOSI 10, SCLK 11) are unchanged.
-#    Wire the panel's ribbon to match these pins.
+#    audio (GPIO 18). The RaspberryPi backend below therefore takes its pins
+#    from device_settings.py in the agent directory (RST 6, BUSY 5, PWR 26,
+#    DC 25, CS 8; MOSI 10 and SCLK 11 are hardware SPI), falling back to the
+#    same values when that module is not importable.
 #
 # 2. SPI bus check in module_init(). The 40-pin header SPI0 is /dev/spidev0.0
 #    on every Pi. A Pi 5 also exposes /dev/spidev10.0, an SPI controller on
@@ -60,15 +58,26 @@ from ctypes import *
 logger = logging.getLogger(__name__)
 
 
+# Control pins for the RaspberryPi backend. Per device, so they live in
+# device_settings.py next to the agent; the fallback keeps this driver usable
+# on its own and matches that file.
+try:
+    import device_settings as _ds
+    _PINS = {"RST": _ds.EINK_PIN_RST, "DC": _ds.EINK_PIN_DC, "CS": _ds.EINK_PIN_CS,
+             "BUSY": _ds.EINK_PIN_BUSY, "PWR": _ds.EINK_PIN_PWR}
+except ImportError:
+    _PINS = {"RST": 6, "DC": 25, "CS": 8, "BUSY": 5, "PWR": 26}
+
+
 class RaspberryPi:
     # Pin definition
-    RST_PIN  = 6 # GPIO 6/pin 31: initially 17
-    DC_PIN   = 25 # GPIO 25/pin 22: initially 25
-    CS_PIN   = 8 # GPIO 8/pin 24: initially 8
-    BUSY_PIN = 5 # GPIO 5/pin 29: initially 24
-    PWR_PIN  = 26 # GPIO 26/pin 37: initially 18
-    MOSI_PIN = 10 # GPIO 10/pin 19: initially 10
-    SCLK_PIN = 11 # GPIO 11/pin 23: initially 11
+    RST_PIN  = _PINS["RST"]
+    DC_PIN   = _PINS["DC"]
+    CS_PIN   = _PINS["CS"]
+    BUSY_PIN = _PINS["BUSY"]
+    PWR_PIN  = _PINS["PWR"]
+    MOSI_PIN = 10   # hardware SPI
+    SCLK_PIN = 11   # hardware SPI
 
     def __init__(self):
         import spidev

@@ -681,14 +681,10 @@ class LLmToAudio:
         )
         text_chunks = []
         raw_chunks = []  # unmodified LLM text (keeps newlines) for the e-ink screen
-        # Recipe mode. The model opens the recipe with RECIPE_MARKER; everything
-        # after it goes to the screen and is not read out. We cannot know a
-        # reply is the recipe until its first characters arrive, so speech is
-        # held back until the marker is either matched or ruled out.
-        marker = voice_agent_utils.RECIPE_MARKER
-        marker_seen = False       # this reply is the recipe
-        route_decided = False     # marker matched or ruled out
-        held_back = ''
+        # Recipe mode: the model opens the recipe with RECIPE_MARKER and the rest
+        # goes to the screen, not the speaker. The router holds speech back
+        # until the marker is matched or ruled out.
+        router = voice_agent_utils.RecipeRouter(voice_agent_utils.RECIPE_MARKER, self.recipe_mode)
         for chunk in llm_response_stream:
             if not self.first_chunk_emitted:
                 self.first_chunk_emitted = True
@@ -707,31 +703,15 @@ class LLmToAudio:
                 text_chunk = self._clean_llm_output(raw_chunk)
                 text_chunks.append(text_chunk)
 
-                if not route_decided:
-                    held_back += text_chunk
-                    probe = held_back.lstrip()
-                    if probe.startswith(marker):
-                        marker_seen = True
-                        route_decided = True
-                        rest = probe[len(marker):]
-                        if not self.recipe_mode and rest.strip():
-                            self._process_text_chunk(rest)
-                        held_back = ''
-                    elif len(probe) < len(marker) and marker.startswith(probe):
-                        pass                         # could still become the marker
-                    else:
-                        route_decided = True
-                        self._process_text_chunk(held_back)
-                        held_back = ''
-                elif not (marker_seen and self.recipe_mode):
-                    self._process_text_chunk(text_chunk)
+                speak = router.feed(text_chunk)
+                if speak:
+                    self._process_text_chunk(speak)
 
         self.is_generating = False
 
-        # A reply too short to decide on (never matched or ruled out the marker)
-        # is an ordinary one: say it.
-        if not route_decided and held_back.strip():
-            self._process_text_chunk(held_back)
+        speak = router.flush()
+        if speak:
+            self._process_text_chunk(speak)
 
         # Always add assistant response to keep context valid (even partial)
         assistant_response = ''.join(text_chunks)
@@ -746,17 +726,17 @@ class LLmToAudio:
             self._info(">> Interrupted, skipping finish processing")
             return
 
-        if marker_seen and self.recipe_mode:
+        if router.marker_seen and self.recipe_mode:
             # The recipe went to the screen, so say one short line rather than
             # leaving the caller with silence.
             self._process_text_chunk(voice_agent_utils.RECIPE_ON_SCREEN_MESSAGE)
 
         if self.recipe_mode:
-            recipe_text = ''.join(raw_chunks).replace(marker, '').strip()
+            recipe_text = ''.join(raw_chunks).replace(voice_agent_utils.RECIPE_MARKER, '').strip()
             # The marker is the reliable signal that this is the recipe; the
             # multi-line test is a fallback for when the model omits it. A
             # one-line clarifying question is neither.
-            is_recipe = marker_seen or len(recipe_text.splitlines()) > 1
+            is_recipe = router.marker_seen or len(recipe_text.splitlines()) > 1
             if recipe_text and is_recipe:
                 self._render_eink(recipe_text)
                 # One recipe per session: the run loop stops listening here
@@ -1230,7 +1210,7 @@ class VoiceAgent():
             # listening and stop generating, so the spoken answer and the e-ink
             # panel stay as they are while you cook. The interrupt button clears
             # this by resetting the mode (see voice_agent_cli.py).
-            if getattr(self.output_handler, 'recipe_delivered', False):
+            if self.output_handler.recipe_delivered:
                 if not idle_notified:
                     self.mute_microphone()
                     self.output_handler.assistant_printer.show_idle(

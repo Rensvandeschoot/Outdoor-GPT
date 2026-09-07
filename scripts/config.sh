@@ -32,6 +32,11 @@ RAG_INDEX=rag_index
 CHAT_PORT=8080
 EMBED_PORT=8081
 
+# Interface the embedding server listens on. 127.0.0.1 keeps it private to
+# the Pi, which is all the agent needs. Set 0.0.0.0 to build the index from
+# a PC on the same network (rag_ingest.py --embedding_server_url).
+EMBED_HOST=127.0.0.1
+
 # Hardware settings for the voice agent.
 PLATFORM=rpi5
 AUDIO_IN=1
@@ -51,3 +56,8 @@ SILENCE_SECONDS=0.7
 #   journalctl -u dietpi-autostart_custom.service -b -f
 # Set back to 0 afterwards; it is noisy.
 VERBOSE=0
+
+# Conversation logs (logs/conversation_*.txt) are written for every session
+# and would otherwise accumulate on the SD card for years. The boot script
+# keeps the newest LOG_KEEP and deletes the rest.
+LOG_KEEP=50

@@ -5,8 +5,8 @@ into overlapping chunks, embeds each chunk via the embedding server, and writes
 the index (chunks.json + embeddings.npy) to the index directory.
 
 The embedding server must be running first (see start_embedding_server.sh).
-It does not have to run on this machine: you can build the index on a PC
-while the embedding server runs on the Pi, as long as they share a network.
+It does not have to run on this machine: with EMBED_HOST=0.0.0.0 in config.sh
+the Pi's server also accepts a PC on the same network.
 
 Usage:
     # embedding server on the same machine
@@ -64,6 +64,33 @@ def chunk_text(text, chunk_words, overlap_words):
     return chunks
 
 
+def embed_batch(batch_chunks, embedding_server_url):
+    """Embed a batch; on failure, fall back to one-by-one and shorten any
+    chunk that exceeds the embedding model's 512-token limit (word counts
+    underestimate tokens on OCR noise, tables and dense numbers)."""
+    try:
+        return embed_texts([c["text"] for c in batch_chunks],
+                           embedding_server_url)
+    except Exception:
+        rows = []
+        for chunk in batch_chunks:
+            text = chunk["text"]
+            while True:
+                try:
+                    rows.append(embed_texts([text], embedding_server_url)[0])
+                    if text is not chunk["text"]:
+                        print(f"  (shortened an over-long chunk from {chunk['source']})")
+                        chunk["text"] = text  # index what was actually embedded
+                    break
+                except Exception:
+                    # Shrink by characters, not words: OCR noise can pack
+                    # thousands of tokens into a handful of huge "words".
+                    if len(text) < 200:
+                        raise
+                    text = text[:int(len(text) * 0.7)]
+        return np.vstack(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build RAG index from documents.")
     parser.add_argument("--docs_dir", required=True, help="Folder with .txt/.md/.pdf documents (searched recursively).")
@@ -96,36 +123,10 @@ def main():
         sys.exit(f"No usable documents found in '{args.docs_dir}' (.txt, .md, .pdf).")
     print(f"\n{n_files} documents -> {len(all_chunks)} chunks. Embedding...")
 
-    def embed_batch(batch_chunks):
-        """Embed a batch; on failure, fall back to one-by-one and shorten any
-        chunk that exceeds the embedding model's 512-token limit (word counts
-        underestimate tokens on OCR noise, tables and dense numbers)."""
-        try:
-            return embed_texts([c["text"] for c in batch_chunks],
-                               args.embedding_server_url)
-        except Exception:
-            rows = []
-            for chunk in batch_chunks:
-                text = chunk["text"]
-                while True:
-                    try:
-                        rows.append(embed_texts([text], args.embedding_server_url)[0])
-                        if text is not chunk["text"]:
-                            print(f"  (shortened an over-long chunk from {chunk['source']})")
-                            chunk["text"] = text  # index what was actually embedded
-                        break
-                    except Exception:
-                        # Shrink by characters, not words: OCR noise can pack
-                        # thousands of tokens into a handful of huge "words".
-                        if len(text) < 200:
-                            raise
-                        text = text[:int(len(text) * 0.7)]
-            return np.vstack(rows)
-
     # Embed in batches
     embeddings = []
     for i in range(0, len(all_chunks), args.batch_size):
-        embeddings.append(embed_batch(all_chunks[i:i + args.batch_size]))
+        embeddings.append(embed_batch(all_chunks[i:i + args.batch_size], args.embedding_server_url))
         done = min(i + args.batch_size, len(all_chunks))
         print(f"  {done}/{len(all_chunks)}", end="\r")
     embeddings = np.vstack(embeddings)

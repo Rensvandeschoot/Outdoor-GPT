@@ -41,6 +41,7 @@ Everything in `scripts/`, plus `prompts.json` in the repo root, gets copied over
 | `scripts/start_llamacpp_server.sh` | modified | Now accepts a context size as second argument |
 | `scripts/startup_script.sh` | new | Boot script for off-grid use: starts both servers + agent (DietPi autostart) |
 | `scripts/config.sh` | new | Per-device paths and settings, sourced by the shell scripts |
+| `scripts/device_settings.py` | new | Per-device settings for the Python side: panel orientation and pins, LED bus, brightness and colours |
 | `scripts/install_on_pi.sh` | new | One-shot installer/updater for the Pi; also the update path |
 | `scripts/check_gpio.sh` | new | Verifies the rotary dial and interrupt button wiring |
 | `scripts/eink_display.py` | new | Renders a recipe on the optional e-ink screen (recipe mode only) |
@@ -200,11 +201,15 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `EMBED_MODEL` | all-MiniLM-L6-v2 | Must be the same model the index was built with |
 | `RAG_INDEX` | `rag_index` | Where the index lives |
 | `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
+| `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
+| `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
 `config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. 
+
+`config.sh` covers the shell scripts. Its Python counterpart is `scripts/device_settings.py`, which holds what the Python modules need: the panel's orientation and control pins, and the LEDs' bus, brightness and colours. Moving to another device means editing these two files and nothing else; like `config.sh`, the Python file is version-controlled with this phone's values and copied over the agent directory on every install.
 
 ## Step 5 — Running it on the Pi
 
@@ -325,7 +330,7 @@ It is wired to stay out of the way:
 
 **The driver is bundled.** The Waveshare 7.5" V2 driver lives in this repo at [`scripts/waveshare_epd/`](scripts/waveshare_epd) (`epd7in5_V2.py` + `epdconfig.py`, MIT-licensed, from [waveshareteam/e-Paper](https://github.com/waveshareteam/e-Paper)), and `install_on_pi.sh` copies it into the agent directory — so there is nothing to fetch. 
 
-Two small changes from upstream, both in the `RaspberryPi` backend of `epdconfig.py`: the control-pin mapping (see the wiring table below), and a guard on the SPI bus — the driver requires `/dev/spidev0.0`, the 40-pin header bus, and raises a readable error instead of quietly opening the wrong controller (override with `OUTDOORGPT_SPI_BUS`). Everything else is verbatim.
+Two small changes from upstream, both in the `RaspberryPi` backend of `epdconfig.py`: the control-pin mapping, read from `scripts/device_settings.py` (see the wiring table below), and a guard on the SPI bus — the driver requires `/dev/spidev0.0`, the 40-pin header bus, and raises a readable error instead of quietly opening the wrong controller (override with `OUTDOORGPT_SPI_BUS`). Everything else is verbatim.
 
 **Software dependencies** (on the Pi, inside the agent's `venv`):
 
@@ -380,7 +385,7 @@ Green and orange are the pair that matter in use: they tell you whose turn it is
 
 The blue window is driven by `is_generating`, a flag added for this. The handler's existing `is_processing` looks like the obvious signal but is not: it only turns on once a sentence is ready to be spoken, so the thinking pause falls entirely outside it and the light would sit on green while the model was already working. `is_processing` is instead read as speaking, because it stays up between sentences while `is_speaking` briefly drops, and reading it as thinking would flick the light blue mid-answer.
 
-`scripts/leds.py` reads the agent's own state from a background thread, so there is nothing to keep in sync at the call sites, and it is fail-safe: without the HAT, without `spidev`, or on the wrong bus it disables itself and the agent runs unchanged. Test the LEDs on their own with `./venv/bin/python test_leds.py` (stop the agent first).
+Colours and brightness are set in `scripts/device_settings.py`. `scripts/leds.py` reads the agent's own state from a background thread, so there is nothing to keep in sync at the call sites, and it is fail-safe: without the HAT, without `spidev`, or on the wrong bus it disables itself and the agent runs unchanged. Test the LEDs on their own with `./venv/bin/python test_leds.py` (stop the agent first).
 
 **They share SPI0 with the e-ink panel** — same MOSI, same SCLK, and only the panel uses a chip select, so LED bytes arriving mid-refresh would reach the panel as commands. Both sides take the lock in `scripts/spi_bus.py`, held for a whole refresh, so the animation pauses for a few seconds while a recipe is drawn. Note also that upstream's `display_leds_interrupt` handler is unusable here: it drives external LEDs on GPIO 5, 6 and 13, and 5 and 6 are the panel's BUSY and RST.
 

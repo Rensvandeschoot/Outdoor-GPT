@@ -92,7 +92,6 @@ def main():
     t1 = time.time()
     print(">> Initializing Voice Agent <<")
     va = VoiceAgent(verbose=args.verbose)
-    va.prompt_selector = prompt_selector  # Store for use on reset
 
     # Create interaction handlers
     user_interaction_handler = get_handler(args.interaction_handler, "User Input", "blue", is_agent=False)

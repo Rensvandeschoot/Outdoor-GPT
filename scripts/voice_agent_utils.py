@@ -23,6 +23,46 @@ RECIPE_MARKER = "<<RECIPE>>"
 RECIPE_ON_SCREEN_MESSAGE = "Check the screen for your recipe. Enjoy your outdoor-meal."
 
 
+class RecipeRouter:
+    """Decides, chunk by chunk, whether a streamed reply may be spoken.
+
+    In recipe mode the model opens the recipe with RECIPE_MARKER, and everything
+    after the marker goes to the screen instead of the speaker. That is only
+    known once the first characters arrive, so text is held back until the
+    marker is matched or ruled out. feed() returns the text that may be spoken
+    now; flush() returns whatever is still held when the reply ends. Outside
+    recipe mode a stray marker is stripped and the text is spoken anyway.
+    """
+
+    def __init__(self, marker, recipe_mode):
+        self.marker = marker
+        self.recipe_mode = recipe_mode
+        self.marker_seen = False
+        self._decided = False
+        self._held = ''
+
+    def feed(self, text):
+        if self._decided:
+            return '' if (self.marker_seen and self.recipe_mode) else text
+        self._held += text
+        probe = self._held.lstrip()
+        if probe.startswith(self.marker):
+            self.marker_seen = True
+            self._decided = True
+            rest = probe[len(self.marker):]
+            self._held = ''
+            return rest if (not self.recipe_mode and rest.strip()) else ''
+        if len(probe) < len(self.marker) and self.marker.startswith(probe):
+            return ''                      # could still become the marker
+        self._decided = True
+        held, self._held = self._held, ''
+        return held
+
+    def flush(self):
+        held, self._held = self._held, ''
+        return held if (not self._decided and held.strip()) else ''
+
+
 def get_cli_argument_parser():
     parser = argparse.ArgumentParser(description="On Device Voice Agen")
     parser.add_argument("--llm_server_url", default=DEFAULT_LLM_SERVER_URL, help="Url where LLM is served using OpenAI-compatible API format.")
