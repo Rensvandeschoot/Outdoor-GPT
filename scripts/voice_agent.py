@@ -107,6 +107,7 @@ class LLmToAudio:
         self.split_on_punctuation = split_on_punctuation
         assert self.max_words_to_speak_start <= self.max_words_to_speak
 
+        self.tts_threads = tts_threads
         t1 = time.time()
         # Check if model is already in pre-loaded cache
         if tts_cache and tts_model_path and tts_model_path in tts_cache:
@@ -115,10 +116,12 @@ class LLmToAudio:
         elif tts_engine == 'piper':
             print('Initializing Piper TTS')
             if tts_model_path:
-                self.tts = tts_engines.TTS_Piper(tts_model_path, warmup=False)
+                self.tts = self._piper_with_thread_cap(
+                    lambda: tts_engines.TTS_Piper(tts_model_path, warmup=False))
                 print(f"Using tts model: {tts_model_path}")
             else:
-                self.tts = tts_engines.TTS_Piper(warmup=False)
+                self.tts = self._piper_with_thread_cap(
+                    lambda: tts_engines.TTS_Piper(warmup=False))
                 print(f"Using default Piper model: {self.tts.model_path}")
         elif tts_engine == 'kokoro':
             print('Initializing Kokoro TTS')
@@ -129,8 +132,6 @@ class LLmToAudio:
                 self.tts = tts_engines.TTS_Kokoro()
         else:
             raise ValueError('Unknown tts engine.')
-        self.tts_threads = tts_threads
-        self._limit_tts_threads(self.tts)
         self.sample_rate = self.tts.get_sample_rate()
         self._info(f"Using sample rate: {self.sample_rate} Hz")
         self.speaking_rate = speaking_rate
@@ -612,29 +613,42 @@ class LLmToAudio:
 
     
 
-    def _limit_tts_threads(self, tts):
-        """Rebuild Piper's onnxruntime session with a fixed thread count.
+    def _piper_with_thread_cap(self, build):
+        """Run `build` (a TTS_Piper constructor) with onnxruntime capped to
+        tts_threads intra-op threads.
 
-        PiperVoice.load() uses a default SessionOptions, i.e. one thread per
-        core, so every sentence lights up all four cores of a Pi 5 at once.
-        Measured on the phone: a 5 A step on the core rail at 2.4 GHz. Two
-        threads roughly halve it. No-op for other engines and when
-        tts_threads is 0; on any failure the original session is kept.
+        PiperVoice.load() creates its session with a default SessionOptions,
+        i.e. one thread per core, so every sentence lights up all four cores
+        of a Pi 5 at once: a 5 A step on the core rail at 2.4 GHz, measured.
+        It offers no way to pass options in, so for the duration of the
+        constructor onnxruntime.InferenceSession is wrapped to apply the cap
+        to whatever options it is handed. The session is created exactly
+        once, where it always was. Building a second capped session
+        afterwards meant loading the model twice, and on a cold boot that
+        second load collided with llama's model load on the SD card and took
+        over 80 seconds. No cap, and no wrapping, when tts_threads is 0.
         """
         n = self.tts_threads
-        voice = getattr(tts, 'piper_voice', None)
-        if not n or voice is None:
-            return
+        if not n:
+            return build()
         try:
             import onnxruntime as ort
-            opts = ort.SessionOptions()
+        except ImportError:
+            return build()
+        original = ort.InferenceSession
+
+        def capped(path_or_bytes, sess_options=None, providers=None, **kwargs):
+            opts = sess_options if sess_options is not None else ort.SessionOptions()
             opts.intra_op_num_threads = n
-            opts.inter_op_num_threads = 1
-            voice.session = ort.InferenceSession(
-                str(tts.model_path), sess_options=opts, providers=['CPUExecutionProvider'])
-            print(f"> Piper limited to {n} onnxruntime thread(s).")
-        except Exception as e:
-            print(f"> Could not limit Piper threads ({e}); keeping the default.")
+            return original(path_or_bytes, sess_options=opts, providers=providers, **kwargs)
+
+        ort.InferenceSession = capped
+        try:
+            tts = build()
+        finally:
+            ort.InferenceSession = original
+        print(f"> Piper limited to {n} onnxruntime thread(s).")
+        return tts
 
     def _say(self, text):
         """Speak a fixed line outside an LLM turn, logged like any reply."""
@@ -851,8 +865,8 @@ class LLmToAudio:
             else:
                 # Load new model and cache it
                 self._info(f"Loading new TTS model: {tts_model_path}")
-                new_tts = tts_engines.TTS_Piper(tts_model_path, warmup=False)
-                self._limit_tts_threads(new_tts)
+                new_tts = self._piper_with_thread_cap(
+                    lambda: tts_engines.TTS_Piper(tts_model_path, warmup=False))
                 self._tts_cache[tts_model_path] = new_tts
                 self.tts = new_tts
 
