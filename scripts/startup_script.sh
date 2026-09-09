@@ -85,15 +85,16 @@ case $MODE in
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""
         [ "${VERBOSE:-0}" = "1" ] && VERBOSE_FLAG="--verbose"
-        # Text-to-speech settings from config.sh; see the comments there.
-        TTS_FLAGS=""
-        [ "${TTS_WARMUP:-0}" = "1" ] && TTS_FLAGS="--tts_warmup"
-        [ -n "${TTS_THREADS:-}" ] && [ "${TTS_THREADS}" != "0" ] && TTS_FLAGS="$TTS_FLAGS --tts_threads ${TTS_THREADS}"
+        # Speech settings from config.sh; see the comments there.
+        SPEECH_FLAGS=""
+        [ "${TTS_WARMUP:-0}" = "1" ] && SPEECH_FLAGS="--tts_warmup"
+        [ -n "${TTS_THREADS:-}" ] && [ "${TTS_THREADS}" != "0" ] && SPEECH_FLAGS="$SPEECH_FLAGS --tts_threads ${TTS_THREADS}"
+        [ -n "${ASR_THREADS:-}" ] && [ "${ASR_THREADS}" != "0" ] && SPEECH_FLAGS="$SPEECH_FLAGS --asr_threads ${ASR_THREADS}"
         # The agent waits for both servers itself (~30s retry each), so the
         # background starts above do not need a sleep here.
         # python -u: unbuffered output, so journal timestamps mark the moment a
         # line was printed rather than the moment a buffer happened to flush.
-        python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG $TTS_FLAGS
+        python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG $SPEECH_FLAGS
         ;;
     *)
         echo "Invalid choice. Exiting."

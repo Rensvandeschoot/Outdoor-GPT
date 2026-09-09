@@ -116,7 +116,8 @@ def main():
         min_partial_duration=args.min_partial_duration,
         end_of_utterance_duration=silence_for(initial_prompt),
         verbose=args.verbose,
-        printer=user_interaction_handler
+        printer=user_interaction_handler,
+        asr_threads=args.asr_threads,
     )
     print(f">> Initialized AudioToTextInput in {time.time() - start_time:.2f} seconds -- <<")
 

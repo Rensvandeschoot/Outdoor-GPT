@@ -64,6 +64,11 @@ CPU_MAX_KHZ=1500000
 TTS_THREADS=2
 TTS_WARMUP=1
 
+# Moonshine (speech recognition) has the same default, so every utterance
+# you speak is a four-core spike as well. ASR_THREADS=2 halves it; 0 keeps
+# the default. The voice activity detector already runs on one thread.
+ASR_THREADS=2
+
 # Seconds of silence before the phone decides you have finished talking.
 # This is the default; a prompt in prompts.json can set its own with
 # "silence_seconds" (Campfire Recipes uses 1.5, since an ingredient list is

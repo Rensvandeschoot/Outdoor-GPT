@@ -1,7 +1,46 @@
 import argparse
+import contextlib
 import json
 import random
 import re
+
+
+@contextlib.contextmanager
+def onnx_thread_cap(n):
+    """Cap the intra-op threads of every onnxruntime session created inside.
+
+    onnxruntime defaults to one thread per core, so a model that is handed no
+    SessionOptions lights up all four cores of a Pi 5 for every inference:
+    measured on the phone, a 5 A step on the core rail at 2.4 GHz. Piper
+    (PiperVoice.load) and Moonshine (MoonshineOnnxModel) both create their
+    sessions that way and offer no way to pass options in, so for the
+    duration of the block onnxruntime.InferenceSession is wrapped to apply
+    the cap to whatever options it is handed. Both libraries call it through
+    the module attribute, which is what makes the wrap take effect. Each
+    model is still loaded exactly once, where it always was. n = 0 means no
+    cap and no wrap.
+    """
+    if not n:
+        yield
+        return
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        yield
+        return
+    original = ort.InferenceSession
+
+    def capped(path_or_bytes, sess_options=None, providers=None, **kwargs):
+        opts = sess_options if sess_options is not None else ort.SessionOptions()
+        opts.intra_op_num_threads = n
+        return original(path_or_bytes, sess_options=opts, providers=providers, **kwargs)
+
+    ort.InferenceSession = capped
+    try:
+        yield
+    finally:
+        ort.InferenceSession = original
+
 
 DEFAULT_LLM_SERVER_URL = "http://localhost:8080/v1"
 DEFAULT_LLM_SERVER_MODEL = "dummy"
@@ -174,6 +213,7 @@ def get_cli_argument_parser():
     parser.add_argument("--rag_min_score", type=float, default=0.35, help="Minimum cosine similarity for a retrieved chunk to be used.")
     parser.add_argument("--tts_warmup", action="store_true", default=False, help="Synthesise a few throwaway lines at startup, after the servers are up, so the first real sentence is not also the heaviest one. Matters on crank power.")
     parser.add_argument("--tts_threads", type=int, default=0, help="Cap the onnxruntime threads Piper uses (0 = default, one per core). 2 roughly halves the current spike per sentence on a Pi 5.")
+    parser.add_argument("--asr_threads", type=int, default=0, help="Same cap for Moonshine, the speech recogniser (0 = default, one per core). Every utterance is otherwise a four-core spike.")
     parser.add_argument("--min_partial_duration", type=float, default=0.25, help="Minimum duration in seconds for partial transcriptions to be displayed.",)
     parser.add_argument("--end_of_utterance_duration", type=float, default=0.7, help="Silence seconds until end of turn of user identified")
     parser.add_argument("--enable_keyboard_control", action="store_true", default=False, help="Enable keyboard control (space to mute/unmute, ESC to exit)")

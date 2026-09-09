@@ -208,6 +208,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `CPU_MAX_KHZ` | `1500000` | Clock ceiling for mode 3. The first sentence the phone speaks is the heaviest moment of the whole start-up; at 1.5 GHz its dip on the 5 V input is less than half of what it is at 2.4 GHz. Costs about two seconds at start-up. Steps of 100000 up to 2400000; empty keeps the kernel's maximum. See [Crank power](#crank-power) |
 | `TTS_THREADS` | `2` | Threads Piper's onnxruntime session may use. The default, one per core, makes every sentence a four-core spike; two roughly halves it. `0` keeps the default |
 | `TTS_WARMUP` | `1` | Synthesise a few throwaway lines during start-up, after both servers are up, so the first real sentence does not also carry onnxruntime's one-off setup cost |
+| `ASR_THREADS` | `2` | Same cap for Moonshine, the speech recogniser, which otherwise makes every utterance you speak a four-core spike. `0` keeps the default |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
@@ -430,12 +431,14 @@ What the measurements on this phone showed, and what the defaults in `config.sh`
 | Finding | Setting |
 |---|---|
 | The heaviest moment of the whole start-up is the first sentence, not model loading: 5 A on the core rail and a 310 mV dip on the input at 2.4 GHz | `CPU_MAX_KHZ=1500000` brings that to 2.9 A and 125 mV, for two seconds of extra start-up |
-| llama-server never exceeds 1.3 A (`--threads 2`); the spikes come from onnxruntime, which Piper and the speech recogniser run on with one thread per core | `TTS_THREADS=2` halves Piper's share at the source |
+| llama-server never exceeds 1.3 A (`--threads 2`); the spikes come from onnxruntime, which Piper and the speech recogniser run on with one thread per core | `TTS_THREADS=2` and `ASR_THREADS=2` halve them at the source |
 | The first synthesis carries onnxruntime's one-off setup cost on top | `TTS_WARMUP=1` pays it during start-up, with both servers loaded and the amplifier still off |
 | The wireless module draws a steady ~95 mA on 3.7 V, about 0.35 W, network or not | `rfkill block wifi` after boot, if you can do without SSH |
 | Holding every core at maximum clock while waiting costs headroom for nothing | `GOVERNOR=ondemand` |
 
 To measure any one of these, change the setting in `config.sh`, restart the service, and compare the trace.
+
+**The power board.** CrankGPT's board is a 20 W switchable hand-crank generator set to 6.3 V, a Schottky diode, three 50 F supercapacitors in series (16.7 F, 8.1 V maximum) with balance resistors, and a 5 A linear regulator down to 5.3 V. The usable reservoir is the energy between the charged voltage and the point where the regulator can no longer hold the Pi above its brown-out level, roughly 6 V down to 5 V: about 90 J, which is 30 s of this phone's idle draw and 15 to 20 s of recipe generation. That is why cranking speed matters second by second, and why the software work above moves the limit but cannot remove it. Stored energy scales with the square of the voltage, so the cheap upgrade is voltage, not more capacitance at the same voltage. Never exceed 2.7 V per capacitor: a 9 V generator setting needs a fourth capacitor in series (10.8 V maximum, about three to four times the reservoir), 12 V needs a fifth (13.5 V maximum, about six times). At those voltages the linear regulator burns half the energy as heat, so replace it with a 5 V / 5 A synchronous buck converter rated for the input range. The board's voltmeter is the diagnostic: read it at the moment the phone dies. Around 5 V means the reservoir ran out; well above it means something else cut the power, such as the generator's own over-current protection.
 
 ### Troubleshooting the boot
 

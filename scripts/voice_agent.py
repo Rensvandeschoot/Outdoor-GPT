@@ -614,40 +614,14 @@ class LLmToAudio:
     
 
     def _piper_with_thread_cap(self, build):
-        """Run `build` (a TTS_Piper constructor) with onnxruntime capped to
-        tts_threads intra-op threads.
-
-        PiperVoice.load() creates its session with a default SessionOptions,
-        i.e. one thread per core, so every sentence lights up all four cores
-        of a Pi 5 at once: a 5 A step on the core rail at 2.4 GHz, measured.
-        It offers no way to pass options in, so for the duration of the
-        constructor onnxruntime.InferenceSession is wrapped to apply the cap
-        to whatever options it is handed. The session is created exactly
-        once, where it always was. Building a second capped session
-        afterwards meant loading the model twice, and on a cold boot that
-        second load collided with llama's model load on the SD card and took
-        over 80 seconds. No cap, and no wrapping, when tts_threads is 0.
-        """
-        n = self.tts_threads
-        if not n:
-            return build()
-        try:
-            import onnxruntime as ort
-        except ImportError:
-            return build()
-        original = ort.InferenceSession
-
-        def capped(path_or_bytes, sess_options=None, providers=None, **kwargs):
-            opts = sess_options if sess_options is not None else ort.SessionOptions()
-            opts.intra_op_num_threads = n
-            return original(path_or_bytes, sess_options=opts, providers=providers, **kwargs)
-
-        ort.InferenceSession = capped
-        try:
+        """Construct a TTS_Piper with its onnxruntime session capped to
+        tts_threads threads. PiperVoice.load() takes no session options, so
+        the cap is applied at creation via voice_agent_utils.onnx_thread_cap;
+        the model is loaded once, where it always was."""
+        with voice_agent_utils.onnx_thread_cap(self.tts_threads):
             tts = build()
-        finally:
-            ort.InferenceSession = original
-        print(f"> Piper limited to {n} onnxruntime thread(s).")
+        if self.tts_threads:
+            print(f"> Piper limited to {self.tts_threads} onnxruntime thread(s).")
         return tts
 
     def _say(self, text):
@@ -897,7 +871,8 @@ class AudioToText:
                  max_segment_duration=15,
                  verbose=False,
                 printer=None,
-                show_performance=False):
+                show_performance=False,
+                asr_threads=0):     # cap Moonshine's onnxruntime threads; 0 = default, one per core
 
         self.verbose = verbose
         self.show_performance = show_performance
@@ -930,12 +905,18 @@ class AudioToText:
         print(f"VAD model loaded in {time.time()-t1:.2f} secs.")    
         
         t1 = time.time()
-        self.asr_model = captioning_utils.load_asr_model(
-            model_name=asr_model_name,
-            model_path=asr_model_path,
-            language=self.language,
-            sampling_rate=16000,
-            show_word_confidence_scores=False)
+        # Moonshine creates its onnxruntime sessions with no options, i.e. one
+        # thread per core, so every utterance is a four-core spike. The VAD
+        # already runs on one thread. See voice_agent_utils.onnx_thread_cap.
+        with voice_agent_utils.onnx_thread_cap(asr_threads):
+            self.asr_model = captioning_utils.load_asr_model(
+                model_name=asr_model_name,
+                model_path=asr_model_path,
+                language=self.language,
+                sampling_rate=16000,
+                show_word_confidence_scores=False)
+        if asr_threads:
+            print(f"> Moonshine limited to {asr_threads} onnxruntime thread(s).")
         print(f"ASR model '{asr_model_name}' loaded in {time.time()-t1:.2f} secs.")
 
         # Transcription thread
