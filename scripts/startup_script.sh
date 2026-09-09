@@ -23,7 +23,83 @@ cd "$AGENT_DIR" || exit 1
 source "${VENV:-venv}/bin/activate" || exit 1
 
 # Mode: 1 = Voice Agent, 2 = Translation, 3 = OutdoorGPT (agent + RAG)
+#
+# Boot mode selection:
+#   Hold INTERRUPT_PIN (GPIO22) while powering on/rebooting.
+#   Then the rotary dial selects the mode:
+#     GPIO23 = mode 1 (Voice Agent)
+#     GPIO24 = mode 2 (Translation)
+#     GPIO17 = mode 3 (OutdoorGPT)
+#
+# If the interrupt button is NOT held during boot, the default MODE below
+# is used.
+
+INTERRUPT_PIN=22
+
+ROTARY_POS1=23
+ROTARY_POS2=24
+ROTARY_POS3=17
+
+# Default mode when the button is not pressed.
 MODE=3
+
+# Give the GPIOs a moment to settle after boot.
+sleep 0.2
+
+BOOT_MODE=$(python - <<'PY'
+import lgpio
+
+INTERRUPT_PIN = 22
+ROTARY_PINS = {
+    1: 23,
+    2: 24,
+    3: 17,
+}
+
+h = None
+
+try:
+    h = lgpio.gpiochip_open(0)
+
+    # All inputs use internal pull-ups.
+    lgpio.gpio_claim_input(h, INTERRUPT_PIN, lgpio.SET_PULL_UP)
+
+    for pin in ROTARY_PINS.values():
+        lgpio.gpio_claim_input(h, pin, lgpio.SET_PULL_UP)
+
+    # Button is active-low: pressed = GPIO LOW.
+    button_pressed = (lgpio.gpio_read(h, INTERRUPT_PIN) == 0)
+
+    if not button_pressed:
+        print("0")
+    else:
+        mode = 0
+
+        for position, pin in ROTARY_PINS.items():
+            if lgpio.gpio_read(h, pin) == 0:
+                mode = position
+                break
+
+        print(mode)
+
+finally:
+    if h is not None:
+        lgpio.gpiochip_close(h)
+PY
+)
+
+case "$BOOT_MODE" in
+    1|2|3)
+        MODE="$BOOT_MODE"
+        echo "Boot selection: rotary position $BOOT_MODE -> MODE=$MODE"
+        ;;
+    0)
+        echo "Boot selection: button not pressed -> default MODE=$MODE"
+        ;;
+    *)
+        echo "Boot selection: invalid rotary position -> default MODE=$MODE"
+        ;;
+esac
 
 # Platform: rpi5 or opi5
 PLATFORM=${PLATFORM:-rpi5}
