@@ -66,6 +66,8 @@ class LLmToAudio:
                  rag_retriever=None,  # optional rag.RagRetriever for retrieval-augmented answers
                  recipe_mode=False,   # one recipe per session, drawn on the e-ink panel if present
                  rag_enabled=True,   # per-mode: retrieval helps lookup, hurts invention
+                 tts_warmup=False,   # synthesise throwaway lines once the servers are up
+                 tts_threads=0,      # cap Piper's onnxruntime threads; 0 = default, one per core
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
@@ -127,6 +129,8 @@ class LLmToAudio:
                 self.tts = tts_engines.TTS_Kokoro()
         else:
             raise ValueError('Unknown tts engine.')
+        self.tts_threads = tts_threads
+        self._limit_tts_threads(self.tts)
         self.sample_rate = self.tts.get_sample_rate()
         self._info(f"Using sample rate: {self.sample_rate} Hz")
         self.speaking_rate = speaking_rate
@@ -146,6 +150,14 @@ class LLmToAudio:
         self.llm_server_url = llm_server_url
         self.llm_client = LLMClient(base_url=llm_server_url, api_key=voice_agent_utils.DEFAULT_LLM_SERVER_API_KEY)
         self.llm_client.wait_for_ready(max_retries=30, retry_delay=1.0)
+        if tts_warmup:
+            # The first synthesis pays onnxruntime's one-off setup cost and is
+            # heavier than any later sentence. Paying it here, with both
+            # servers loaded and the amplifier still off, keeps it away from
+            # the greeting, which on crank power is where the phone browns out.
+            t_w = time.time()
+            self.tts.warmup(target_sr=self.sample_rate)
+            print(f"> TTS warmed up in {time.time()-t_w:.2f} secs.")
         self.system_prompt = system_prompt
         self.start_message = start_message
         self.messages = [
@@ -600,6 +612,30 @@ class LLmToAudio:
 
     
 
+    def _limit_tts_threads(self, tts):
+        """Rebuild Piper's onnxruntime session with a fixed thread count.
+
+        PiperVoice.load() uses a default SessionOptions, i.e. one thread per
+        core, so every sentence lights up all four cores of a Pi 5 at once.
+        Measured on the phone: a 5 A step on the core rail at 2.4 GHz. Two
+        threads roughly halve it. No-op for other engines and when
+        tts_threads is 0; on any failure the original session is kept.
+        """
+        n = self.tts_threads
+        voice = getattr(tts, 'piper_voice', None)
+        if not n or voice is None:
+            return
+        try:
+            import onnxruntime as ort
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = n
+            opts.inter_op_num_threads = 1
+            voice.session = ort.InferenceSession(
+                str(tts.model_path), sess_options=opts, providers=['CPUExecutionProvider'])
+            print(f"> Piper limited to {n} onnxruntime thread(s).")
+        except Exception as e:
+            print(f"> Could not limit Piper threads ({e}); keeping the default.")
+
     def _say(self, text):
         """Speak a fixed line outside an LLM turn, logged like any reply."""
         self.interrupt_event.clear()
@@ -816,6 +852,7 @@ class LLmToAudio:
                 # Load new model and cache it
                 self._info(f"Loading new TTS model: {tts_model_path}")
                 new_tts = tts_engines.TTS_Piper(tts_model_path, warmup=False)
+                self._limit_tts_threads(new_tts)
                 self._tts_cache[tts_model_path] = new_tts
                 self.tts = new_tts
 

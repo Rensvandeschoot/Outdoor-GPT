@@ -49,6 +49,21 @@ SPEAKING_RATE=1.
 # "performance" for the fastest replies on mains power.
 GOVERNOR=ondemand
 
+# Clock ceiling in kHz for mode 3, also applied by the boot script. Measured
+# on this phone: the greeting pulls 5 A on the core rail at 2.4 GHz and 2.9 A
+# at 1.5 GHz, and the 5 V input dips 310 mV versus 125 mV. On crank power that
+# dip is what shuts the Pi down. Costs about two seconds at startup. Steps of
+# 100000 between 1500000 and 2400000; leave empty for the kernel's maximum.
+CPU_MAX_KHZ=1500000
+
+# Piper (text to speech) runs on onnxruntime, which by default takes one
+# thread per core, so every sentence lights up all four cores at once.
+# TTS_THREADS=2 roughly halves that spike; 0 keeps the default.
+# TTS_WARMUP=1 synthesises a few throwaway lines at startup, after both
+# servers are up, so the first real sentence is not also the heaviest one.
+TTS_THREADS=2
+TTS_WARMUP=1
+
 # Seconds of silence before the phone decides you have finished talking.
 # This is the default; a prompt in prompts.json can set its own with
 # "silence_seconds" (Campfire Recipes uses 1.5, since an ingredient list is

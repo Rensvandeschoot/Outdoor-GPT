@@ -149,6 +149,8 @@ def main():
         rag_retriever=rag_retriever,
         recipe_mode=initial_prompt.get('mode') == 'recipe',
         rag_enabled=initial_prompt.get('rag', True),
+        tts_warmup=args.tts_warmup,
+        tts_threads=args.tts_threads,
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 

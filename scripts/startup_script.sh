@@ -45,6 +45,16 @@ else
     echo "CPU governor '$GOVERNOR' not available on this kernel; left unchanged"
 fi
 
+# Clock ceiling, mode 3 only. The first sentence the phone speaks is the
+# heaviest moment of the whole start-up: 5 A on the core rail at 2.4 GHz
+# against 2.9 A at 1.5 GHz, with the 5 V input dipping 310 mV against 125 mV.
+# On crank power that dip is what shuts the Pi down. The kernel rounds to the
+# nearest available step, so the value that took effect is printed back.
+if [ "$MODE" = "3" ] && [ -n "$CPU_MAX_KHZ" ]; then
+    echo "$CPU_MAX_KHZ" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq > /dev/null 2>&1
+    echo "CPU clock ceiling: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null || echo unknown) kHz (requested $CPU_MAX_KHZ)"
+fi
+
 case $MODE in
     1)
         echo "Starting llama-server (agent)..."
@@ -75,9 +85,15 @@ case $MODE in
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""
         [ "${VERBOSE:-0}" = "1" ] && VERBOSE_FLAG="--verbose"
+        # Text-to-speech settings from config.sh; see the comments there.
+        TTS_FLAGS=""
+        [ "${TTS_WARMUP:-0}" = "1" ] && TTS_FLAGS="--tts_warmup"
+        [ -n "${TTS_THREADS:-}" ] && [ "${TTS_THREADS}" != "0" ] && TTS_FLAGS="$TTS_FLAGS --tts_threads ${TTS_THREADS}"
         # The agent waits for both servers itself (~30s retry each), so the
         # background starts above do not need a sleep here.
-        python voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG
+        # python -u: unbuffered output, so journal timestamps mark the moment a
+        # line was printed rather than the moment a buffer happened to flush.
+        python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG $TTS_FLAGS
         ;;
     *)
         echo "Invalid choice. Exiting."

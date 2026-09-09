@@ -205,6 +205,9 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
 | `GOVERNOR` | `ondemand` | CPU governor applied by the boot script in mode 3. `ondemand` clocks down while the phone waits, which matters on crank power: a Pi 5 held at maximum clock spends its headroom on idling instead of on the audio stage. Use `performance` for the fastest replies on mains power |
+| `CPU_MAX_KHZ` | `1500000` | Clock ceiling for mode 3. The first sentence the phone speaks is the heaviest moment of the whole start-up; at 1.5 GHz its dip on the 5 V input is less than half of what it is at 2.4 GHz. Costs about two seconds at start-up. Steps of 100000 up to 2400000; empty keeps the kernel's maximum. See [Crank power](#crank-power) |
+| `TTS_THREADS` | `2` | Threads Piper's onnxruntime session may use. The default, one per core, makes every sentence a four-core spike; two roughly halves it. `0` keeps the default |
+| `TTS_WARMUP` | `1` | Synthesise a few throwaway lines during start-up, after both servers are up, so the first real sentence does not also carry onnxruntime's one-off setup cost |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
@@ -254,7 +257,7 @@ Inside the phone there are no terminals: everything must start by itself when th
 | 2 | Translation agent (unchanged) |
 | **3** | **OutdoorGPT: chat LLM (context 4096) + embedding server + agent with `--rag_index`** |
 
-Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. The one thing it changes is the CPU governor: modes 1 and 2 keep CrankGPT's `performance`, while mode 3 applies `GOVERNOR` from `config.sh` (`ondemand` by default) so the phone does not hold every core at maximum clock while it waits for you to speak. Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
+Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, logging to `/var/log/embedding-server.log`) plus the RAG flags on the agent. What it changes is the CPU: modes 1 and 2 keep CrankGPT's `performance` governor, while mode 3 applies `GOVERNOR` and `CPU_MAX_KHZ` from `config.sh` so the phone neither idles at full clock nor spikes to it, passes the `TTS_*` settings through to the agent, and runs it with `python -u` so journal timestamps are real. The measurements behind those defaults are under [Crank power](#crank-power). Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
 
 DietPi must be set to run the custom script in the first place. Check with:
 
@@ -409,6 +412,28 @@ Colours and brightness are set in `scripts/device_settings.py`. `scripts/leds.py
   | `--chunk_words` (ingest) | 150 | Chunk size in words; keep it small while the language model's context is small |
 
 - **Model ignoring the documents?** A very small model (like LFM2-350M) is usually the limiting factor. A 1B+ parameter model (Q4 quantization) gives noticeably better answers on a Pi 5, at the cost of some latency. If you switch models, grow `CHAT_CONTEXT` in `config.sh` along with it.
+
+### Crank power
+
+On mains the phone is fine; on the hand crank it browned out the moment the agent first spoke. The Pi 5 can tell you why: its power chip reports the current on every rail. Run this over SSH, provoke a cold start with `systemctl restart dietpi-autostart_custom.service` in a second window, and read the last lines before the Pi dies. They reach your laptop before the power does.
+
+```bash
+while true; do echo "$(date +%T) $(vcgencmd pmic_read_adc | grep -E 'EXT5V_V|VDD_CORE_A|3V3_SYS_A|3V7_WL_SW_A' | sed 's/ *current([0-9]*)//; s/ *volt([0-9]*)//' | tr '\n' ' ') $(vcgencmd get_throttled)"; sleep 0.25; done
+```
+
+`VDD_CORE_A` is the CPU, `3V3_SYS_A` the 3.3 V rail (HAT, e-ink, SD card), `3V7_WL_SW_A` the wireless module, `EXT5V_V` the input voltage. The speaker amplifier sits on 5 V and does not show up as a current; watch `EXT5V_V` for it. Single samples can be nonsense (an 8 A reading on a rail that cannot deliver it); trust sustained levels and the voltage.
+
+What the measurements on this phone showed, and what the defaults in `config.sh` do about it:
+
+| Finding | Setting |
+|---|---|
+| The heaviest moment of the whole start-up is the first sentence, not model loading: 5 A on the core rail and a 310 mV dip on the input at 2.4 GHz | `CPU_MAX_KHZ=1500000` brings that to 2.9 A and 125 mV, for two seconds of extra start-up |
+| llama-server never exceeds 1.3 A (`--threads 2`); the spikes come from onnxruntime, which Piper and the speech recogniser run on with one thread per core | `TTS_THREADS=2` halves Piper's share at the source |
+| The first synthesis carries onnxruntime's one-off setup cost on top | `TTS_WARMUP=1` pays it during start-up, with both servers loaded and the amplifier still off |
+| The wireless module draws a steady ~95 mA on 3.7 V, about 0.35 W, network or not | `rfkill block wifi` after boot, if you can do without SSH |
+| Holding every core at maximum clock while waiting costs headroom for nothing | `GOVERNOR=ondemand` |
+
+To measure any one of these, change the setting in `config.sh`, restart the service, and compare the trace.
 
 ### Troubleshooting the boot
 

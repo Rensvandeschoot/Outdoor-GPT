@@ -172,6 +172,8 @@ def get_cli_argument_parser():
     parser.add_argument("--embedding_server_url", default="http://localhost:8081/v1", help="OpenAI-compatible embedding server url (llama.cpp with --embedding). Only used with --rag_index.")
     parser.add_argument("--rag_top_k", type=int, default=2, help="Max number of retrieved chunks to inject per question.")
     parser.add_argument("--rag_min_score", type=float, default=0.35, help="Minimum cosine similarity for a retrieved chunk to be used.")
+    parser.add_argument("--tts_warmup", action="store_true", default=False, help="Synthesise a few throwaway lines at startup, after the servers are up, so the first real sentence is not also the heaviest one. Matters on crank power.")
+    parser.add_argument("--tts_threads", type=int, default=0, help="Cap the onnxruntime threads Piper uses (0 = default, one per core). 2 roughly halves the current spike per sentence on a Pi 5.")
     parser.add_argument("--min_partial_duration", type=float, default=0.25, help="Minimum duration in seconds for partial transcriptions to be displayed.",)
     parser.add_argument("--end_of_utterance_duration", type=float, default=0.7, help="Silence seconds until end of turn of user identified")
     parser.add_argument("--enable_keyboard_control", action="store_true", default=False, help="Enable keyboard control (space to mute/unmute, ESC to exit)")
