@@ -423,6 +423,8 @@ while true; do echo "$(date +%T) $(vcgencmd pmic_read_adc | grep -E 'EXT5V_V|VDD
 
 `VDD_CORE_A` is the CPU, `3V3_SYS_A` the 3.3 V rail (HAT, e-ink, SD card), `3V7_WL_SW_A` the wireless module, `EXT5V_V` the input voltage. The speaker amplifier sits on 5 V and does not show up as a current; watch `EXT5V_V` for it. Single samples can be nonsense (an 8 A reading on a rail that cannot deliver it); trust sustained levels and the voltage.
 
+One trap when timing a cold boot on mains: the Pi 5 has no battery on its clock, so DietPi starts it from the time saved at shutdown, and about a minute after boot, once WiFi is up, `systemd-timesyncd` steps it forward by however long the reboot took (around 40 s here). Anything measured across that instant with the wall clock gets the step added: journal timestamps, the agent's own "in X secs" lines, llama-server's timestamp column. Read the journal with `-o short-monotonic` (seconds since boot, never steps) and trust llama-server's per-request `prompt eval time` / `eval time`, which come from a monotonic clock. Off-grid there is no time server and no step.
+
 What the measurements on this phone showed, and what the defaults in `config.sh` do about it:
 
 | Finding | Setting |
