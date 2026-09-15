@@ -10,6 +10,14 @@ A fully off-grid outdoor assistant living inside an old hand-cranked field telep
 
 If you came here from the website [OutdoorGPT.ai](www.outdoorGPT.ai): this is the part that was never fiction. What follows is the actual build — the pipeline end to end, the experiments and tests, and the many small adjustments our failures argued us into.
 
+![Inside the OutdoorGPT box: a Raspberry Pi, a hand-crank generator, an analog voltmeter, a speaker and hand-wired electronics in an olive-green wooden case.](assets/ai%20in%20a%20box.jpeg)
+
+**Small models can also be capable** — here is the real thing, running fully offline:
+
+<video src="assets/small%20models%20can%20also%20be%20capable.mp4" controls muted loop playsinline width="100%"></video>
+
+> If the video does not play inline on GitHub, watch it directly: [small models can also be capable.mp4](assets/small%20models%20can%20also%20be%20capable.mp4)
+
 ## Origin & credits
 
 This project builds on the work of others:
