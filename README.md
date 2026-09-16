@@ -8,7 +8,7 @@ A fully off-grid outdoor assistant living inside an old hand-cranked field telep
 | 2 | **Campfire Recipes** | Turns your ingredients into a campfire recipe |
 | 3 | **Survive the Night** | Step-by-step help how to survive the night |
 
-If you came here from the website [OutdoorGPT.ai](www.outdoorGPT.ai): this is the part that was never fiction. What follows is the actual build — the pipeline end to end, the experiments and tests, and the many small adjustments our failures argued us into.
+If you came here from the website www.outdoorGPT.ai: this is the part that was never fiction. What follows is the actual build — the pipeline end to end, the experiments and tests, and the many small adjustments our failures argued us into.
 
 ![Inside the OutdoorGPT box: a Raspberry Pi, a hand-crank generator, an analog voltmeter, a speaker and hand-wired electronics in an olive-green wooden case.](assets/ai%20in%20a%20box.jpeg)
 
