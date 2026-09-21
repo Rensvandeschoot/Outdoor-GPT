@@ -1,273 +1,179 @@
-"""Draw the start-up instruction card for the e-ink screen.
+"""Build the start-up instruction card for the e-ink screen from the photo
+of the OutdoorGPT concept render (eink_instructions_source.jpg).
 
-Four numbered pictograms, after the card on the OutdoorGPT concept render:
-1 cut down a tree, 2 put the box on the stump, 3 turn the crank, 4 talk to
-the AI. Drawn in the four grey levels the Waveshare 7.5" V2 can show
-(white, light grey, dark grey, black), which is what gives the card the look
-of the original: white cards on a grey ground, the box and the stump shaded.
+The four instruction panels are located in the photo, each is warped flat,
+the uneven lighting is divided out so the card ground comes out white and
+the ink black, and the result is snapped to the four grey levels the
+Waveshare 7.5" V2 can show. The panels in the photo are about the size of
+the cards on the screen, so the artwork is reproduced at its own resolution:
+the bark strokes, the growth rings, the ribbing on the box all survive.
+
 Writes eink_instructions.png next to this file, in the screen's render
-orientation (480x800 portrait or 800x480 landscape, from device_settings.py).
-The display code fits the image to the screen either way, and any picture
-Pillow can open may replace it under the same name.
+orientation (480x800 portrait, 2x2; or 800x480 landscape, one row) from
+device_settings.py. The display code fits the image to the screen either
+way, and any picture Pillow can open may replace it under the same name.
 
-Run on the PC (needs Pillow):   python scripts/make_eink_instructions.py
+Run on the PC (needs Pillow, numpy, scipy):
+    python scripts/make_eink_instructions.py [photo]
 """
-import math
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
+from scipy import ndimage
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 import device_settings  # noqa: E402
+
+SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "eink_instructions_source.jpg")
+OUT = os.path.join(HERE, device_settings.EINK_INSTRUCTIONS_IMAGE)
 
 EPD_WIDTH, EPD_HEIGHT = 800, 480
 PORTRAIT = device_settings.EINK_ORIENTATION == "portrait"
 W, H = (EPD_HEIGHT, EPD_WIDTH) if PORTRAIT else (EPD_WIDTH, EPD_HEIGHT)
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                   device_settings.EINK_INSTRUCTIONS_IMAGE)
+MARGIN, GUTTER = 10, 10
 
-SS = 4                  # supersample: draw large, shrink, snap to the four levels
-
-# The panel's four grey levels, as the driver defines them (epd7in5_V2.py).
+# The panel's four grey levels, exactly as the driver's 4-grey mode expects.
 WHITE, LIGHT, DARK, BLACK = 0xFF, 0xC0, 0x80, 0x00
-LEVELS = (BLACK, DARK, LIGHT, WHITE)
-
-_FONTS_BOLD = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "C:/Windows/Fonts/arialbd.ttf",
-    "/Library/Fonts/Arial Bold.ttf",
-]
+# Cut points between them. Slightly below the midpoints, so anti-aliased
+# edges lean towards the ink and solid fills stay solid.
+CUTS = (70, 150, 215)
 
 
-def font(size):
-    for p in _FONTS_BOLD:
-        if os.path.exists(p):
-            return ImageFont.truetype(p, size)
-    try:
-        return ImageFont.load_default(size)
-    except TypeError:               # Pillow < 10.1 has no sized default
-        return ImageFont.load_default()
+# ------------------------------------------------------------ find the cards
+
+def find_cards(gray):
+    """Corner quads (TL, TR, BR, BL) of the four white cards, left to right."""
+    a = np.asarray(gray, dtype=np.uint8)
+    bright = a > 150
+    lab, n = ndimage.label(bright)
+    sizes = ndimage.sum(bright, lab, range(1, n + 1))
+    slices = ndimage.find_objects(lab)
+    cands = []
+    for i, s in enumerate(sizes, start=1):
+        if not 20000 <= s <= 200000:
+            continue
+        ys, xs = slices[i - 1]
+        w, h = xs.stop - xs.start, ys.stop - ys.start
+        if 0.35 < w / h < 0.9:
+            cands.append((i, xs.start, xs.stop, ys.start, ys.stop))
+    cands.sort(key=lambda c: c[1])
+    if len(cands) < 4:
+        sys.exit(f"found {len(cands)} card-sized white areas, expected 4")
+    cands = cands[:4]
+    top = min(c[3] for c in cands)
+    bot = max(c[4] for c in cands)
+
+    quads = []
+    for _, x0, x1, _, _ in cands:
+        # All bright pieces in this card's column: a pictogram's ground line
+        # can cut the white card in two.
+        mask = np.zeros_like(bright)
+        for j, sl in enumerate(slices, start=1):
+            if sl is None:
+                continue
+            ys, xs = sl
+            if xs.start >= x0 - 4 and xs.stop <= x1 + 5 and ys.start >= top - 4 and ys.stop <= bot + 5:
+                mask |= lab == j
+        mask = ndimage.binary_fill_holes(mask)
+        ys, xs = np.nonzero(mask)
+        s, d = xs + ys, xs - ys
+        quads.append([(xs[s.argmin()], ys[s.argmin()]), (xs[d.argmax()], ys[d.argmax()]),
+                      (xs[s.argmax()], ys[s.argmax()]), (xs[d.argmin()], ys[d.argmin()])])
+
+    # The cards share one bottom edge. A card whose detected bottom sits well
+    # above the others (a shadow, or a ground line reaching the outline) gets
+    # its bottom corners from the line through the other cards' corners.
+    hts = [q[3][1] - q[0][1] for q in quads]
+    full = [q for q, h in zip(quads, hts) if h >= 0.97 * max(hts)]
+    pts = [q[2] for q in full] + [q[3] for q in full]
+    m, c = np.polyfit([float(x) for x, _ in pts], [float(y) for _, y in pts], 1)
+    for q, h in zip(quads, hts):
+        if h < 0.97 * max(hts):
+            blx, brx = q[0][0] - 3, q[1][0] + 4
+            q[2] = (brx, int(round(m * brx + c)))
+            q[3] = (blx, int(round(m * blx + c)))
+    return [[(int(x), int(y)) for x, y in q] for q in quads]
 
 
-class Panel:
-    """One numbered card.
-
-    Pictograms are drawn in unit coordinates (u to the right, v down) over a
-    box of fixed aspect ratio below the number badge, so the same drawing
-    code gives undistorted shapes in both screen orientations. `s` is the
-    box width, used for radii and stroke widths.
-    """
-    ASPECT = 0.58   # box width / height
-
-    def __init__(self, draw, box, number):
-        self.d = draw
-        x0, y0, x1, y1 = box
-        pw = x1 - x0
-        draw.rounded_rectangle(box, radius=int(pw * 0.07), fill=WHITE, outline=DARK,
-                               width=max(2, int(pw * 0.018)))
-        br = int(pw * 0.085)
-        bx, by = x0 + int(pw * 0.14), y0 + int(pw * 0.14)
-        draw.ellipse((bx - br, by - br, bx + br, by + br), fill=BLACK)
-        draw.text((bx, by), str(number), fill=WHITE, font=font(int(br * 1.45)), anchor="mm")
-        pad = int(pw * 0.09)
-        ax, ay = x0 + pad, by + br + pad // 2
-        aw, ah = pw - 2 * pad, (y1 - pad) - ay
-        bw = min(aw, ah * self.ASPECT)
-        bh = bw / self.ASPECT
-        self.ax = ax + (aw - bw) / 2
-        self.ay = ay + (ah - bh) / 2
-        self.s = bw
-        self.bh = bh
-
-    def p(self, u, v):
-        return (self.ax + u * self.s, self.ay + v * self.bh)
-
-    def pts(self, *uv):
-        return [self.p(u, v) for u, v in uv]
-
-    def stroke(self, k=0.03):
-        return max(2, int(self.s * k))
-
-    def circle(self, u, v, r, fill, outline=None, k=0.02):
-        x, y = self.p(u, v)
-        R = r * self.s
-        self.d.ellipse((x - R, y - R, x + R, y + R), fill=fill, outline=outline,
-                       width=self.stroke(k) if outline is not None else 0)
-
-    def line(self, a, b, k=0.03, fill=BLACK):
-        self.d.line([self.p(*a), self.p(*b)], fill=fill, width=self.stroke(k))
+def perspective_coeffs(src_pts, dst_pts):
+    """Pillow's 8 coefficients mapping output (dst) points to input (src)."""
+    A, b = [], []
+    for (x, y), (u, v) in zip(dst_pts, src_pts):
+        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        A.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        b += [u, v]
+    return np.linalg.solve(np.array(A, dtype=np.float64), np.array(b, dtype=np.float64))
 
 
-# ----------------------------------------------------------------- shared parts
+# ------------------------------------------------------------ clean one card
 
-def stump(P, cx, top_v, bot_v, hw):
-    """A cut tree stump: dark grey wood with black bark lines and outline,
-    a light top face with black growth rings, flared roots."""
-    d = P.d
-    ry = 0.045
-    body = P.pts((cx - hw, top_v), (cx + hw, top_v),
-                 (cx + hw * 1.05, bot_v - 0.03), (cx + hw * 1.4, bot_v),
-                 (cx - hw * 1.4, bot_v), (cx - hw * 1.05, bot_v - 0.03))
-    d.polygon(body, fill=DARK, outline=BLACK, width=P.stroke(0.02))
-    for u in (cx - hw * 0.45, cx, cx + hw * 0.45):        # bark grooves
-        P.line((u, top_v + ry + 0.03), (u, bot_v - 0.06), k=0.018, fill=BLACK)
-    x0, y0 = P.p(cx - hw, top_v - ry)
-    x1, y1 = P.p(cx + hw, top_v + ry)
-    d.ellipse((x0, y0, x1, y1), fill=LIGHT, outline=BLACK, width=P.stroke(0.025))
-    for k in (0.66, 0.36):                                 # growth rings
-        ex0, ey0 = P.p(cx - hw * k, top_v - ry * k)
-        ex1, ey1 = P.p(cx + hw * k, top_v + ry * k)
-        d.ellipse((ex0, ey0, ex1, ey1), outline=BLACK, width=P.stroke(0.018))
-
-
-def device(P, u0, v0, u1, v1):
-    """The crank box: a dark grey ribbed case with a black outline, a lighter
-    lid strip and a white screen."""
-    d = P.d
-    x0, y0 = P.p(u0, v0)
-    x1, y1 = P.p(u1, v1)
-    r = int((x1 - x0) * 0.10)
-    d.rounded_rectangle((x0, y0, x1, y1), radius=r, fill=DARK, outline=BLACK,
-                        width=P.stroke(0.022))
-    lid_h = (y1 - y0) * 0.42                               # lighter lid
-    d.rounded_rectangle((x0, y0, x1, y0 + lid_h), radius=r, fill=LIGHT, outline=BLACK,
-                        width=P.stroke(0.022))
-    d.rectangle((x0, y0 + lid_h * 0.5, x1, y0 + lid_h), fill=LIGHT)
-    d.line([(x0, y0 + lid_h), (x1, y0 + lid_h)], fill=BLACK, width=P.stroke(0.022))
-    n = 5
-    for i in range(1, n):                                  # ribs on the case
-        y = y0 + lid_h + (y1 - y0 - lid_h) * i / n
-        d.line([(x0 + r * 0.7, y), (x1 - r * 0.7, y)], fill=BLACK, width=max(1, P.stroke(0.012)))
-    sw, sh = (x1 - x0) * 0.46, lid_h * 0.62                # screen in the lid
-    sx, sy = x0 + (x1 - x0) * 0.09, y0 + lid_h * 0.19
-    d.rectangle((sx, sy, sx + sw, sy + sh), fill=WHITE, outline=BLACK, width=P.stroke(0.015))
+def flatten_and_stretch(card):
+    """Divide out the lighting (fitted on the light ground only, so the big
+    dark shapes do not pull it), then put the ground at white and the darkest
+    ink at black."""
+    a = np.asarray(card, dtype=np.float64)
+    h, w = a.shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    x, y, v = xx.ravel() / w, yy.ravel() / h, a.ravel()
+    X = np.stack([np.ones_like(x), x, y, x * x, x * y, y * y], axis=1)
+    ground = v > np.percentile(v, 55)
+    coef, *_ = np.linalg.lstsq(X[ground], v[ground], rcond=None)
+    illum = (X @ coef).reshape(h, w)
+    flat = a / np.maximum(illum, 1.0) * 255.0
+    ink = flat[flat < 128]
+    black = np.percentile(ink, 3) if ink.size else 0.0
+    out = (flat - black) / max(255.0 - black, 1.0) * 255.0
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
-def arrowhead(P, u, v, du, dv, size):
-    """Filled triangle with its tip at (u, v), pointing along (du, dv)."""
-    n = (du * du + dv * dv) ** 0.5
-    du, dv = du / n, dv / n
-    px, py = -dv, du                                       # perpendicular
-    tip = (u, v)
-    base = (u - du * size, v - dv * size)
-    left = (base[0] + px * size * 0.6, base[1] + py * size * 0.6)
-    right = (base[0] - px * size * 0.6, base[1] - py * size * 0.6)
-    P.d.polygon(P.pts(tip, left, right), fill=BLACK)
-
-
-# ---------------------------------------------------------------- the panels
-
-def draw_chop(P):
-    """1: a person swings an axe into the base of a pine."""
-    d = P.d
-    P.line((0.02, 0.90), (0.98, 0.90), k=0.02)             # ground
-    for u in (0.06, 0.12, 0.88, 0.94):                     # grass
-        P.line((u, 0.90), (u + 0.02, 0.85), k=0.015)
-    cx = 0.75                                              # pine, shaded on the right
-    for tip, base, hw in ((0.03, 0.33, 0.16), (0.17, 0.51, 0.21), (0.33, 0.69, 0.25)):
-        d.polygon(P.pts((cx, tip), (cx - hw, base), (cx + hw, base)), fill=BLACK)
-        d.polygon(P.pts((cx, tip + 0.02), (cx, base), (cx + hw - 0.02, base)), fill=DARK)
-    d.rectangle([P.p(cx - 0.045, 0.67), P.p(cx + 0.045, 0.90)], fill=BLACK)
-    for u, v in ((0.60, 0.56), (0.67, 0.60), (0.63, 0.50)):   # chips flying off the trunk
-        d.polygon(P.pts((u, v), (u + 0.035, v + 0.01), (u + 0.01, v + 0.03)), fill=BLACK)
-    # the woodcutter: a filled silhouette leaning into the swing
-    P.circle(0.25, 0.29, 0.065, BLACK)                     # head
-    d.polygon(P.pts((0.19, 0.33), (0.32, 0.33), (0.36, 0.47), (0.33, 0.61),
-                    (0.20, 0.61), (0.17, 0.48)), fill=BLACK)   # torso
-    P.line((0.23, 0.60), (0.12, 0.90), k=0.07)              # back leg
-    P.line((0.31, 0.60), (0.38, 0.90), k=0.07)              # front leg
-    P.line((0.31, 0.40), (0.52, 0.56), k=0.06)              # arms to the grip
-    P.line((0.26, 0.45), (0.50, 0.58), k=0.055)
-    P.line((0.49, 0.55), (0.64, 0.73), k=0.035)             # axe handle
-    d.polygon(P.pts((0.57, 0.66), (0.66, 0.70), (0.72, 0.77), (0.71, 0.88),
-                    (0.62, 0.84), (0.55, 0.75)), fill=DARK, outline=BLACK,
-              width=P.stroke(0.02))                        # axe head, edge into the trunk
-
-
-def draw_place(P):
-    """2: the box above the stump, arrow down."""
-    d = P.d
-    device(P, 0.16, 0.06, 0.78, 0.30)
-    d.rectangle([P.p(0.78, 0.16), P.p(0.87, 0.20)], fill=BLACK)   # crank stub
-    P.circle(0.88, 0.18, 0.025, BLACK)
-    d.rectangle([P.p(0.44, 0.37), P.p(0.56, 0.50)], fill=BLACK)   # arrow shaft
-    d.polygon(P.pts((0.32, 0.50), (0.68, 0.50), (0.50, 0.63)), fill=BLACK)
-    stump(P, cx=0.50, top_v=0.74, bot_v=0.94, hw=0.22)
-
-
-def draw_crank(P):
-    """3: the box on the stump, crank turning."""
-    d = P.d
-    stump(P, cx=0.46, top_v=0.58, bot_v=0.82, hw=0.24)
-    device(P, 0.14, 0.28, 0.72, 0.54)
-    P.line((0.72, 0.41), (0.80, 0.41), k=0.03)              # axle
-    P.line((0.80, 0.41), (0.88, 0.32), k=0.03)              # crank arm
-    P.circle(0.88, 0.32, 0.035, BLACK)                     # handle
-    cx, cy = P.p(0.80, 0.41)                               # rotation arrow
-    R = 0.13 * P.s
-    d.arc((cx - R, cy - R, cx + R, cy + R), start=-75, end=105, fill=BLACK, width=P.stroke(0.028))
-    a = math.radians(105)
-    arrowhead(P, 0.80 + 0.13 * math.cos(a), 0.41 + 0.13 * math.sin(a) * (P.s / P.bh),
-              -math.sin(a), math.cos(a), 0.085)
-
-
-def draw_talk(P):
-    """4: a head in profile speaks; sound waves; a speech bubble saying AI."""
-    d = P.d
-    bx0, by0 = P.p(0.46, 0.04)                             # bubble
-    bx1, by1 = P.p(0.98, 0.26)
-    d.rounded_rectangle((bx0, by0, bx1, by1), radius=int((bx1 - bx0) * 0.22),
-                        fill=WHITE, outline=BLACK, width=P.stroke(0.03))
-    P.line((0.57, 0.26), (0.69, 0.26), k=0.04, fill=WHITE)  # open the border for the tail
-    P.line((0.57, 0.26), (0.51, 0.36), k=0.03)
-    P.line((0.69, 0.26), (0.51, 0.36), k=0.03)
-    d.text(((bx0 + bx1) / 2, (by0 + by1) / 2), "AI", fill=BLACK,
-           font=font(int((by1 - by0) * 0.62)), anchor="mm")
-    head = [
-        (0.30, 0.98), (0.30, 0.78),                        # back of the neck
-        (0.20, 0.70), (0.14, 0.58), (0.14, 0.44), (0.19, 0.33),   # back of the skull
-        (0.27, 0.25), (0.38, 0.21), (0.50, 0.21), (0.59, 0.26), (0.64, 0.36),   # crown, forehead
-        (0.62, 0.46),                                      # brow
-        (0.70, 0.54), (0.65, 0.58),                        # nose
-        (0.67, 0.62), (0.60, 0.64),                        # upper lip
-        (0.66, 0.68), (0.60, 0.72),                        # open mouth
-        (0.64, 0.78), (0.56, 0.84),                        # chin
-        (0.48, 0.90), (0.48, 0.98),                        # front of the neck
-    ]
-    d.polygon(P.pts(*head), fill=BLACK)
-    P.circle(0.54, 0.42, 0.028, WHITE)                     # eye
-    mx, my = P.p(0.68, 0.66)                               # sound waves
-    for k in (0.10, 0.17, 0.24):
-        R = k * P.s
-        d.arc((mx - R, my - R, mx + R, my + R), start=-45, end=45, fill=BLACK, width=P.stroke(0.03))
-
-
-# --------------------------------------------------------------------- layout
-
-def snap_to_levels(img):
-    """Nearest of the panel's four grey levels for every pixel; the soft
-    edges from downsampling become one-step grey fringes, which is as close
-    to anti-aliasing as the panel gets."""
-    lut = [min(LEVELS, key=lambda lv: abs(lv - v)) for v in range(256)]
+def snap(img):
+    lut = [BLACK if v < CUTS[0] else DARK if v < CUTS[1] else LIGHT if v < CUTS[2] else WHITE
+           for v in range(256)]
     return img.point(lut)
 
 
+# ---------------------------------------------------------------------- main
+
 def main():
-    img = Image.new("L", (W * SS, H * SS), LIGHT)         # grey ground, white cards
-    d = ImageDraw.Draw(img)
-    m = int(W * SS * 0.04)          # outer margin
-    g = int(W * SS * 0.035)         # gutter between cards
+    photo = Image.open(SRC).convert("L")
+    quads = find_cards(photo)
+
     cols, rows = (2, 2) if PORTRAIT else (4, 1)
-    pw = (W * SS - 2 * m - (cols - 1) * g) // cols
-    ph = (H * SS - 2 * m - (rows - 1) * g) // rows
-    for i, fn in enumerate((draw_chop, draw_place, draw_crank, draw_talk)):
-        c, r = i % cols, i // cols
-        x0, y0 = m + c * (pw + g), m + r * (ph + g)
-        fn(Panel(d, (x0, y0, x0 + pw, y0 + ph), i + 1))
-    out = snap_to_levels(img.resize((W, H), Image.LANCZOS))
-    out.save(OUT)
-    print(f"wrote {OUT}  ({W}x{H}, {'portrait' if PORTRAIT else 'landscape'}, 4 grey levels)")
+    cell_w = (W - 2 * MARGIN - (cols - 1) * GUTTER) // cols
+    cell_h = (H - 2 * MARGIN - (rows - 1) * GUTTER) // rows
+    # Card size: the source aspect, fitted in the cell.
+    src_aspect = np.mean([(q[1][0] - q[0][0]) / (q[3][1] - q[0][1]) for q in quads])
+    cw = min(cell_w, int(cell_h * src_aspect))
+    ch = int(cw / src_aspect)
+    radius = int(cw * 0.06)
+
+    out = Image.new("L", (W, H), WHITE)
+    draw = ImageDraw.Draw(out)
+    for k, quad in enumerate(quads):
+        tw, th = cw * 2, ch * 2                       # warp at 2x, shrink once
+        coeffs = perspective_coeffs(quad, [(0, 0), (tw, 0), (tw, th), (0, th)])
+        card = photo.transform((tw, th), Image.PERSPECTIVE, coeffs, Image.BICUBIC)
+        card = flatten_and_stretch(card)
+        card = card.filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
+        card = card.resize((cw, ch), Image.LANCZOS)
+        # Rounded corners: the warp's corner pixels come from the outline.
+        mask = Image.new("L", (cw, ch), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=radius, fill=255)
+        card = Image.composite(card, Image.new("L", (cw, ch), WHITE), mask)
+
+        c, r = k % cols, k // cols
+        x0 = MARGIN + c * (cell_w + GUTTER) + (cell_w - cw) // 2
+        y0 = MARGIN + r * (cell_h + GUTTER) + (cell_h - ch) // 2
+        out.paste(card, (x0, y0))
+        draw.rounded_rectangle((x0, y0, x0 + cw - 1, y0 + ch - 1), radius=radius,
+                               outline=DARK, width=3)
+
+    snap(out).save(OUT)
+    print(f"wrote {OUT}  ({W}x{H}, {'portrait 2x2' if PORTRAIT else 'landscape 1x4'}, "
+          f"cards {cw}x{ch}, 4 grey levels)")
 
 
 if __name__ == "__main__":
