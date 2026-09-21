@@ -68,6 +68,7 @@ class LLmToAudio:
                  rag_enabled=True,   # per-mode: retrieval helps lookup, hurts invention
                  tts_warmup=False,   # synthesise throwaway lines once the servers are up
                  tts_threads=0,      # cap Piper's onnxruntime threads; 0 = default, one per core
+                 eink=None,          # EinkRecipeDisplay made by the CLI, which draws on it before this exists
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
@@ -81,7 +82,7 @@ class LLmToAudio:
         self.recipe_mode = recipe_mode
         # Collects and confirms the ingredient list before the model sees it.
         self.recipe_intake = voice_agent_utils.RecipeIntake()
-        self.eink = None          # EinkRecipeDisplay, created on first use
+        self.eink = eink          # EinkRecipeDisplay; created on first use if the CLI passed none
         # Retrieval is per mode: it suits lookups (survival, first aid) and
         # hurts invention. For an ingredient list the retrieved chunks are
         # historical cookbook prose that derails a small model.
@@ -1346,9 +1347,9 @@ class VoiceAgent():
         self._info("Full reset requested")
 
         # Switch recipe mode with the prompt. The panel is deliberately not
-        # cleared: it is bistable, so the last recipe stays readable after
-        # leaving recipe mode. A new recipe session shows nothing until its
-        # first recipe is generated.
+        # touched here: it is bistable, so the last recipe stays readable after
+        # turning the dial away from recipes. The button is different: the CLI
+        # draws the instruction card on every press before it gets here.
         if recipe_mode is not None and hasattr(self, 'output_handler'):
             self.output_handler.recipe_mode = recipe_mode
         if rag_enabled is not None and hasattr(self, 'output_handler'):

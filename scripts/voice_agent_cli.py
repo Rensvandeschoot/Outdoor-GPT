@@ -71,6 +71,15 @@ def main():
         gpio_handler.setup(add_interrupt_button=True, add_rotary_dial=True)
         print(f">> GPIO handler: {gpio_handler.__class__.__name__}")
 
+    # The e-ink panel next, before any model loads: the instruction card goes
+    # up while the phone is still starting, so the screen explains what to do
+    # from the first seconds of power. After the GPIO setup on purpose, so the
+    # two never initialise the pin backend at the same time. Fail-safe: with
+    # no panel this does nothing.
+    from eink_display import EinkRecipeDisplay
+    eink = EinkRecipeDisplay(verbose=args.verbose)
+    eink.render_image_async()
+
     # Pick initial prompt: from rotary dial if available, else random
     initial_prompt = None
     if gpio_handler:
@@ -152,6 +161,7 @@ def main():
         rag_enabled=initial_prompt.get('rag', True),
         tts_warmup=args.tts_warmup,
         tts_threads=args.tts_threads,
+        eink=eink,
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
@@ -210,6 +220,9 @@ def main():
 
     def on_button_press():
         """Interrupt the agent, or start a fresh recipe session."""
+        # Every press puts the instruction card back on the screen: the button
+        # means "start over", and the card is what a newcomer needs to see.
+        eink.render_image_async()
         # Recipe mode delivers one recipe and then stops listening, so there is
         # nothing to interrupt. Restart the same mode instead: cleared context
         # and the opening question again, ready for new ingredients.

@@ -73,13 +73,19 @@ def main():
     g.add_argument("--text", help="render this literal text (use \\n for line breaks)")
     g.add_argument("--doc", action="store_true",
                    help="render the campfire-safety sample from docs/test_document")
+    g.add_argument("--instructions", action="store_true",
+                   help="draw the start-up instruction card (eink_instructions.png)")
     args = ap.parse_args()
 
-    try:
-        text, what = load_text(args)
-    except OSError as e:
-        print(f"Could not read the input file: {e}")
-        return 1
+    text = None
+    if args.instructions:
+        what = "the instruction card (eink_instructions.png)"
+    else:
+        try:
+            text, what = load_text(args)
+        except OSError as e:
+            print(f"Could not read the input file: {e}")
+            return 1
 
     print("OutdoorGPT e-ink panel test")
     print(f"  drawing : {what}")
@@ -96,7 +102,10 @@ def main():
 
     disp = EinkRecipeDisplay(verbose=True)
     try:
-        disp.render_blocking(text)
+        if args.instructions:
+            disp.render_image_blocking()
+        else:
+            disp.render_blocking(text)
     except Exception:
         print("\nFAILED to draw. Full error:\n")
         traceback.print_exc()

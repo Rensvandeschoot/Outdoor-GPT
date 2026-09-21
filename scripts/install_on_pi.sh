@@ -85,7 +85,8 @@ fi
 echo
 echo "[2/6] Copying our files over the agent"
 # Everything in scripts/ except this installer, which has no business there.
-for f in "$REPO"/scripts/*.py "$REPO"/scripts/*.sh; do
+# The .png is the e-ink instruction card (see make_eink_instructions.py).
+for f in "$REPO"/scripts/*.py "$REPO"/scripts/*.sh "$REPO"/scripts/*.png; do
   [ "$(basename "$f")" = "install_on_pi.sh" ] && continue
   cp "$f" "$AGENT_DIR/" || die "copy failed: $f"
 done
