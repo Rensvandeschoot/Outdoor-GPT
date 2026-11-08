@@ -26,7 +26,9 @@
 # silence it until the boot script restarts it); --exit_phrase "please quit"
 # turns it on for a session at a desk, matched as whole words.
 
+import os
 import sys
+import tempfile
 import threading
 import time
 start_time = time.time()
@@ -48,11 +50,34 @@ ROTARY_SETTLE_DELAY = 0.5
 print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
 
 
+def hold_single_instance_lock():
+    """Refuse to run next to another agent; return the lock (keep it open).
+
+    A second agent, started by hand while the boot service runs one, fails
+    on the GPIO pins, the sound card or the server ports with errors that
+    do not say why. This says why. Linux only (fcntl); elsewhere no lock.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    lock_dir = '/run' if os.access('/run', os.W_OK) else tempfile.gettempdir()
+    lock = open(os.path.join(lock_dir, 'outdoorgpt-agent.lock'), 'w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(">> Another OutdoorGPT agent is already running, probably the boot service. "
+              "Stop it first: systemctl stop dietpi-autostart_custom.service")
+        sys.exit(1)
+    return lock
+
+
 def main():
     """Main function to run the LLM to Audio output streamer."""
-    
+
     parser = voice_agent_utils.get_cli_argument_parser()
     args = parser.parse_args()
+    instance_lock = hold_single_instance_lock()  # noqa: F841 - held until exit
 
     voice_agent_utils.apply_audio_device_settings(args)
 

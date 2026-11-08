@@ -38,6 +38,7 @@ setup() {
 
 # --- test overrides
 LLAMA_SERVER=$A/fake-llama-server
+LOCK_FILE=$T/outdoorgpt.lock
 RESTART_DELAY=1
 CPU_MAX_KHZ=
 EOF
@@ -160,6 +161,23 @@ grep -q "Starting OutdoorGPT" "$A/logs/boot/boot_7.log" && ok "the script's outp
   || fail "boot_7.log lacks the script's output"
 [ -f "$A/logs/boot/boot_7_llama-server.log" ] && ok "server log of the boot kept next to it" \
   || fail "no boot_7_llama-server.log"
+
+echo "5. A second copy of the script is refused while the first runs"
+if command -v flock >/dev/null 2>&1; then
+  setup second
+  printf '60 0\n' > "$A/plan"
+  start_script
+  FIRST=$SCRIPT_PID
+  wait_for 15 '[ -f "$A/agent.pid" ]' || fail "first copy never started its agent"
+  AGENT_DIR="$A" bash "$A/startup_script.sh" > "$A/second.out" 2>&1
+  RC2=$?
+  [ "$RC2" = 1 ] && grep -q "already running" "$A/second.out" && ok "second copy refused with a message" \
+    || { fail "second copy not refused (exit $RC2):"; cat "$A/second.out"; }
+  [ "$(count ' start ' "$A/agent.log")" = 1 ] && ok "no second agent started" || fail "a second agent was started"
+  kill -TERM "$FIRST" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+else
+  echo "  skip  flock not available here (it is on DietPi)"
+fi
 
 echo
 if [ "$FAILED" = 0 ]; then echo "All boot script checks passed."; else echo "Boot script checks FAILED."; fi

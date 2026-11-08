@@ -73,14 +73,33 @@ case $MODE in
         python voice_translate_cli.py --preload-tts --platform $PLATFORM --audio-device-input 1 --audio-device-output 0
         ;;
     3)
+        # One OutdoorGPT at a time. Started by hand while the service runs, a
+        # second copy fought the first for the ports, the GPIO pins and the
+        # sound card. The lock (fd 9) is held for as long as this script runs;
+        # every child below gets 9>&- so none of them keeps it after we are
+        # gone. flock is part of util-linux, always there on DietPi.
+        if command -v flock >/dev/null 2>&1; then
+            exec 9>"${LOCK_FILE:-/run/outdoorgpt.lock}"
+            if ! flock -n 9; then
+                echo "OutdoorGPT is already running. To restart it: systemctl restart dietpi-autostart_custom.service"
+                exit 1
+            fi
+        fi
+        # With the lock held, any llama-server on our ports is a leftover (a
+        # server started by hand, a script that was killed): it would hold the
+        # port and the new server would fail to start.
+        pkill -f "llama-server.* --port ${CHAT_PORT:-8080}( |\$)" 2>/dev/null
+        pkill -f "llama-server.* --port ${EMBED_PORT:-8081}( |\$)" 2>/dev/null
+
         # Boot logs on the SD card, in logs/boot/ of the agent directory: this
         # script's own output with the agent's (boot_<n>.log, also still in
         # the journal) and each server's (boot_<n>_llama-server.log,
         # boot_<n>_embedding-server.log), appended to on every restart. On
         # DietPi /var/log and the journal usually live in RAM (DietPi-RAMlog),
-        # so what went wrong was gone after the very power cycle that recovered the phone. Boots are
-        # numbered, not dated: off-grid the clock cannot be trusted. The
-        # newest BOOT_LOGS_KEEP (config.sh) boots are kept.
+        # so what went wrong was gone after the very power cycle that
+        # recovered the phone. Boots are numbered, not dated: off-grid the
+        # clock cannot be trusted. The newest BOOT_LOGS_KEEP (config.sh) are
+        # kept.
         BOOT_LOG_DIR=logs/boot
         mkdir -p "$BOOT_LOG_DIR"
         BOOT_NR=$(cat "$BOOT_LOG_DIR/last" 2>/dev/null)
@@ -96,7 +115,7 @@ case $MODE in
         done
         CHAT_LOG="$BOOT_LOG_DIR/boot_${BOOT_NR}_llama-server.log"
         EMBED_LOG="$BOOT_LOG_DIR/boot_${BOOT_NR}_embedding-server.log"
-        exec > >(tee -a "$BOOT_LOG_DIR/boot_$BOOT_NR.log") 2>&1
+        exec > >(tee -a "$BOOT_LOG_DIR/boot_$BOOT_NR.log" 9>&-) 2>&1
         echo "OutdoorGPT boot $BOOT_NR ($(date '+%Y-%m-%d %H:%M:%S'), clock not reliable off-grid)"
 
         # Conversation logs would otherwise pile up on the SD card for years;
@@ -148,12 +167,12 @@ case $MODE in
             # The start scripts exec llama-server, so $! is the server itself.
             if [ -z "$CHAT_PID" ] || ! kill -0 "$CHAT_PID" 2>/dev/null; then
                 echo "Starting llama-server (outdoor agent)..."
-                sh start_llamacpp_server.sh >> "$CHAT_LOG" 2>&1 &
+                sh start_llamacpp_server.sh >> "$CHAT_LOG" 2>&1 9>&- &
                 CHAT_PID=$!
             fi
             if [ -z "$EMBED_PID" ] || ! kill -0 "$EMBED_PID" 2>/dev/null; then
                 echo "Starting embedding server (RAG)..."
-                sh start_embedding_server.sh >> "$EMBED_LOG" 2>&1 &
+                sh start_embedding_server.sh >> "$EMBED_LOG" 2>&1 9>&- &
                 EMBED_PID=$!
             fi
 
@@ -166,7 +185,7 @@ case $MODE in
             # line was printed rather than the moment a buffer happened to flush.
             STARTED=$SECONDS
             OUTDOORGPT_CHAT_PID=$CHAT_PID OUTDOORGPT_EMBED_PID=$EMBED_PID \
-            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS
+            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS 9>&-
             RC=$?
             RAN=$(( SECONDS - STARTED ))
             # 4: a server process runs but never became ready (see
