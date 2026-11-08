@@ -3,7 +3,8 @@
 The thinking pause on a small model is long enough that silence reads as a
 fault; the LEDs show what is actually happening. Colours (device_settings.py):
 
-    starting   turquoise, slow breath  (the phone is starting up)
+    booting    soft yellow, slow breath (the Pi itself boots: outdoorgpt-leds-early.service)
+    starting   turquoise, slow breath  (the agent starts and loads the models)
                ... with a short red flick in every breath: starting again
                after an error (see the boot logs at home)
                red, blinking calmly: started and failed 3 times in a row,
@@ -99,11 +100,14 @@ def level(wave):
 class StatusLeds:
     """Mirrors the agent's state onto the HAT LEDs from a background thread."""
 
-    def __init__(self, output_handler=None, verbose=False, boot='normal'):
-        """boot: how 'starting' looks (boot_mode_from_env())."""
+    def __init__(self, output_handler=None, verbose=False, boot='normal', starting='starting'):
+        """boot: how 'starting' looks (boot_mode_from_env()). starting: the
+        colour of the start-up breath; 'booting' (soft yellow) for the stretch
+        before the agent runs, so the two phases can be told apart."""
         self._handler = output_handler
         self._verbose = verbose
         self._boot = boot
+        self._starting = starting
         self._spi = None
         self._thread = None
         self._stop = threading.Event()
@@ -216,12 +220,12 @@ class StatusLeds:
                 on = (now % BLINK_PERIOD) < BLINK_ON
                 return (COLOURS['error'], MAX_BRIGHTNESS) if on else (COLOURS['off'], 0)
             if now < self._ack_until:
-                return COLOURS['starting'], MAX_BRIGHTNESS
+                return COLOURS[self._starting], MAX_BRIGHTNESS
             if self._boot == 'recovering' and (now % BOOT_PERIOD) < FLICK:
                 # Between two breaths, at their darkest: something went wrong
                 # before this start, worth a look in the boot logs at home.
                 return COLOURS['error'], MAX_BRIGHTNESS
-            return COLOURS['starting'], level(breath(now, BOOT_PERIOD))
+            return COLOURS[self._starting], level(breath(now, BOOT_PERIOD))
         if state == 'thinking':
             return COLOURS['thinking'], level(breath(now, PULSE_PERIOD))
         return COLOURS[state], MAX_BRIGHTNESS
@@ -267,7 +271,7 @@ if __name__ == "__main__":
     #   python leds.py --error    blink red calmly. The boot script runs this
     #                             while it waits to start the agent again
     #                             after an error.
-    #   python leds.py --booting  the turquoise start-up breath, from early in
+    #   python leds.py --booting  a soft yellow start-up breath, from early in
     #                             the boot (outdoorgpt-leds-early.service)
     #                             until the boot script stops it just before
     #                             the agent takes the LEDs over. Before any
@@ -280,7 +284,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Drive the status LEDs on their own until stopped.")
     what = ap.add_mutually_exclusive_group(required=True)
     what.add_argument("--error", action="store_true", help="blink red calmly")
-    what.add_argument("--booting", action="store_true", help="the turquoise start-up breath")
+    what.add_argument("--booting", action="store_true", help="the soft yellow start-up breath")
     args = ap.parse_args()
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())
@@ -292,7 +296,7 @@ if __name__ == "__main__":
                 time.sleep(0.1)
             leds.stop()
     else:
-        leds = StatusLeds()
+        leds = StatusLeds(starting='booting')
         # Early in the boot the SPI device may not exist yet: udev creates it
         # once the driver has loaded. Keep trying for a while.
         give_up = time.time() + BOOTING_OPEN_WAIT
