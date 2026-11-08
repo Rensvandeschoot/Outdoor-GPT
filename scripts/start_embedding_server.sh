@@ -32,7 +32,8 @@ fi
 # - the batch size must cover a whole chunk, since an embedding cannot be split
 # - EMBED_HOST (config.sh) is the interface to listen on: 127.0.0.1 by default,
 #   0.0.0.0 to let a PC on the network build the index against this server
-nice -n 10 \
+# exec: the boot script tracks this PID to restart a server that has died.
+exec nice -n 10 \
   "$LLAMA_SERVER" -m "$MODEL" \
   --embedding \
   --pooling mean \

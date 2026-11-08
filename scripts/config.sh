@@ -87,3 +87,8 @@ VERBOSE=0
 # and would otherwise accumulate on the SD card for years. The boot script
 # keeps the newest LOG_KEEP and deletes the rest.
 LOG_KEEP=50
+
+# Seconds the boot script waits before starting the agent again after it
+# stopped (a crash, a server it could not reach). Doubles on every stop in
+# a row, up to 60, and drops back once the agent has run for two minutes.
+RESTART_DELAY=3
