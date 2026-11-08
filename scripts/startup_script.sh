@@ -143,6 +143,8 @@ case $MODE in
         # both servers down with it.
         CHAT_PID=""
         EMBED_PID=""
+        BLINK_PID=""
+        FAILED=0    # agent runs in a row that ended in an error
         # Stop both servers and wait (up to 5 s, then SIGKILL) until they are
         # gone, so a new one can take the port.
         stop_servers() {
@@ -157,6 +159,7 @@ case $MODE in
         }
         stop_all() {
             echo "Stopping OutdoorGPT..."
+            [ -n "$BLINK_PID" ] && kill "$BLINK_PID" 2>/dev/null
             stop_servers
             exit 0
         }
@@ -184,6 +187,9 @@ case $MODE in
             # python -u: unbuffered output, so journal timestamps mark the moment a
             # line was printed rather than the moment a buffer happened to flush.
             STARTED=$SECONDS
+            # OUTDOORGPT_FAILED_STARTS: after an error the start-up breath
+            # shows red (leds.py), calmly blinking once 3 runs failed in a row.
+            OUTDOORGPT_FAILED_STARTS=$FAILED \
             OUTDOORGPT_CHAT_PID=$CHAT_PID OUTDOORGPT_EMBED_PID=$EMBED_PID \
             python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS 9>&-
             RC=$?
@@ -202,14 +208,35 @@ case $MODE in
                 echo "Restarting the whole pipeline (button held 20 s)"
                 stop_servers
                 DELAY=${RESTART_DELAY:-3}
+                FAILED=0
                 continue
+            fi
+            # Anything but a clean exit is an error. A run that lasted two
+            # minutes worked before it failed, so the count starts again at 1.
+            if [ "$RC" = 0 ]; then
+                FAILED=0
+            elif [ "$RAN" -ge 120 ]; then
+                FAILED=1
+            else
+                FAILED=$(( FAILED + 1 ))
             fi
             [ "$RAN" -ge 120 ] && DELAY=${RESTART_DELAY:-3}
             echo "OutdoorGPT stopped (exit code $RC after ${RAN}s); starting it again in ${DELAY}s"
+            # After an error the LEDs blink red calmly until the agent starts
+            # again: there is no agent to drive them in between.
+            if [ "$RC" != 0 ]; then
+                python -u leds.py --error 9>&- &
+                BLINK_PID=$!
+            fi
             # sleep in the background and wait for it, so a SIGTERM is acted
             # on at once instead of after the sleep.
             sleep "$DELAY" &
             wait $!
+            if [ -n "$BLINK_PID" ]; then
+                kill "$BLINK_PID" 2>/dev/null
+                wait "$BLINK_PID" 2>/dev/null
+                BLINK_PID=""
+            fi
             DELAY=$(( DELAY * 2 > 60 ? 60 : DELAY * 2 ))
         done
         ;;

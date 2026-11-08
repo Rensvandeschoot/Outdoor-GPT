@@ -87,11 +87,17 @@ def main():
     # Status LEDs first: a slow turquoise breath from the first second until
     # the agent is ready (attach() below). Fail-safe: no HAT, no spidev, no
     # LEDs and the agent is unaffected.
-    from leds import StatusLeds
-    status_leds = StatusLeds(verbose=args.verbose)
+    from leds import StatusLeds, boot_mode_from_env
+    # After an error the boot script says how many starts failed in a row;
+    # the start-up breath then shows it in red (leds.py).
+    boot_mode = boot_mode_from_env()
+    status_leds = StatusLeds(verbose=args.verbose, boot=boot_mode)
     if status_leds.start():
         print(">> Status LEDs active (turquoise breath=starting, green=your turn, "
-              "blue=thinking, orange=speaking, purple=done)")
+              "blue=thinking, orange=speaking, purple=done, red=something went wrong)")
+    if boot_mode != 'normal':
+        print(f">> Starting after {os.environ.get('OUTDOORGPT_FAILED_STARTS')} failed start(s) in a row: "
+              f"LEDs show '{boot_mode}'. The boot logs are in logs/boot/.")
 
     # Setup GPIO handler early so we can read the rotary dial for the initial prompt
     gpio_handler = None

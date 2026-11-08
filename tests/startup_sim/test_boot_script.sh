@@ -27,6 +27,7 @@ trap cleanup EXIT
 ok()   { echo "  ok    $*"; }
 fail() { echo "  FAIL  $*"; FAILED=1; }
 count() { grep -c "$1" "$2" 2>/dev/null || true; }
+gap() { awk -v a="${1:-0}" -v b="${2:-0}" 'BEGIN { printf "%.1f", b - a }'; }   # seconds from a to b
 
 # A fresh agent directory with the real boot script and server scripts.
 setup() {
@@ -49,15 +50,21 @@ EOF
   cat > "$A/venv/bin/python" <<'EOF'
 #!/bin/bash
 # Fake agent. Runs in the agent dir, like the real one.
+case "$*" in
+  *leds.py*)    # the red blink between restarts: runs until stopped
+    echo "$(date +%s.%N) blink on" >> agent.log
+    trap 'echo "$(date +%s.%N) blink off" >> agent.log; exit 0' TERM INT
+    while :; do sleep 1 & wait $!; done ;;
+esac
 n=$(( $(cat runs 2>/dev/null || echo 0) + 1 )); echo "$n" > runs
 echo "$$" > agent.pid
-echo "$(date +%s) start $n" >> agent.log
+echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-}" >> agent.log
 line=$(sed -n "${n}p" plan 2>/dev/null); [ -z "$line" ] && line="999 0"
 set -- $line
-trap 'echo "$(date +%s) term $n" >> agent.log; exit 0' TERM INT
+trap 'echo "$(date +%s.%N) term $n" >> agent.log; exit 0' TERM INT
 sleep "$1" &
 wait $!
-echo "$(date +%s) exit $n $2" >> agent.log
+echo "$(date +%s.%N) exit $n $2" >> agent.log
 exit "$2"
 EOF
   cat > "$A/fake-llama-server" <<'EOF'
@@ -99,10 +106,11 @@ else
 fi
 e1=$(awk '$2=="exit" && $3==1 {print $1}' "$A/agent.log"); s2=$(awk '$2=="start" && $3==2 {print $1}' "$A/agent.log")
 e2=$(awk '$2=="exit" && $3==2 {print $1}' "$A/agent.log"); s3=$(awk '$2=="start" && $3==3 {print $1}' "$A/agent.log")
-if [ -n "$s3" ] && [ $(( s3 - e2 )) -gt $(( s2 - e1 )) ]; then
-  ok "second wait ($(( s3 - e2 ))s) longer than the first ($(( s2 - e1 ))s)"
+w1=$(gap "$e1" "$s2"); w2=$(gap "$e2" "$s3")
+if [ -n "$s3" ] && awk -v a="$w1" -v b="$w2" 'BEGIN { exit !(b > a + 0.5) }'; then
+  ok "second wait (${w2}s) longer than the first (${w1}s)"
 else
-  fail "waits did not grow: $(( ${s2:-0} - ${e1:-0} ))s then $(( ${s3:-0} - ${e2:-0} ))s"
+  fail "waits did not grow: ${w1}s then ${w2}s"
 fi
 [ "$(count ' up 8080' "$A/servers.log")" = 1 ] && [ "$(count ' up 8081' "$A/servers.log")" = 1 ] \
   && ok "servers that kept running were not started twice" \
@@ -162,7 +170,40 @@ grep -q "Starting OutdoorGPT" "$A/logs/boot/boot_7.log" && ok "the script's outp
 [ -f "$A/logs/boot/boot_7_llama-server.log" ] && ok "server log of the boot kept next to it" \
   || fail "no boot_7_llama-server.log"
 
-echo "5. A second copy of the script is refused while the first runs"
+echo "5. Exit codes 4 and 3 replace both servers; 3 restarts at once; errors are counted and blink red"
+setup codes
+printf '1 4\n1 3\n60 0\n' > "$A/plan"
+start_script
+wait_for 25 '[ "$(count " start 3" "$A/agent.log")" = 1 ]' || { fail "no third run:"; cat "$A/agent.log"; }
+wait_for 10 '[ "$(count " up 8080" "$A/servers.log")" = 3 ] && [ "$(count " up 8081" "$A/servers.log")" = 3 ]' \
+  && ok "both servers replaced after exit code 4 and after 3" || { fail "servers:"; cat "$A/servers.log"; }
+f1=$(awk '$2=="start" && $3==1 {print $4}' "$A/agent.log"); f2=$(awk '$2=="start" && $3==2 {print $4}' "$A/agent.log")
+f3=$(awk '$2=="start" && $3==3 {print $4}' "$A/agent.log")
+[ "$f1 $f2 $f3" = "failed=0 failed=1 failed=0" ] && ok "failed starts passed on: 0, 1 after the error, 0 after the asked-for restart" \
+  || fail "failed starts passed on: $f1 $f2 $f3"
+e2=$(awk '$2=="exit" && $3==2 {print $1}' "$A/agent.log"); s3=$(awk '$2=="start" && $3==3 {print $1}' "$A/agent.log")
+w=$(gap "$e2" "$s3")
+[ -n "$s3" ] && awk -v w="$w" 'BEGIN { exit !(w < 3) }' && ok "restart after exit code 3 without the wait (${w}s)" \
+  || fail "restart after exit code 3 took ${w}s"
+[ "$(count 'blink on' "$A/agent.log")" = 1 ] && [ "$(count 'blink off' "$A/agent.log")" = 1 ] \
+  && ok "red blink during the wait after the error only, stopped before the next start" \
+  || { fail "blink:"; cat "$A/agent.log"; }
+pid=$(awk '$2=="start" && $3==3 {print $5}' "$A/agent.log"); pid=${pid#chat=}
+[ -n "$pid" ] && [ "$pid" = "$(cat "$A/server_8080.pid")" ] && ok "the agent gets the chat server's PID" \
+  || fail "chat PID passed ($pid) is not the server's ($(cat "$A/server_8080.pid"))"
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+
+echo "6. Three failed starts in a row are counted up"
+setup failing
+printf '1 1\n1 1\n1 1\n60 0\n' > "$A/plan"
+start_script
+wait_for 40 '[ "$(count " start 4" "$A/agent.log")" = 1 ]' || fail "no fourth run"
+[ "$(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")" = "failed=0 failed=1 failed=2 failed=3 " ] \
+  && ok "failed=0,1,2,3: the fourth start shows the calm red blink" \
+  || fail "counted: $(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")"
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+
+echo "7. A second copy of the script is refused while the first runs"
 if command -v flock >/dev/null 2>&1; then
   setup second
   printf '60 0\n' > "$A/plan"

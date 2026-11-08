@@ -165,13 +165,15 @@ class World:
             self.set_pin(pin, True)
 
     def press(self, dur):
-        t0 = now()
+        # Recorded when pressed, completed when let go: a 20 s hold ends the
+        # run (pipeline restart) before it is let go.
+        rec = {'down': round(now(), 2), 'up': None, 'dur': dur, 'state_at_up': {}}
+        self.presses.append(rec)
         self.ev('press', dur=dur)
         self.set_pin(PIN_BUTTON, True)
         sleep(dur)
         self.set_pin(PIN_BUTTON, False)
-        self.presses.append({'down': round(t0, 2), 'up': round(now(), 2), 'dur': dur,
-                             'state_at_up': self.snapshot_state()})
+        rec.update(up=round(now(), 2), state_at_up=self.snapshot_state())
 
     # -- servers ----------------------------------------------------------
     def chat_ready(self):

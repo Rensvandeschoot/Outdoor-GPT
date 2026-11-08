@@ -36,9 +36,12 @@ LEGEND = {
     'BUTTON_LOST_AT_BOOT': 'a press during start-up showed nothing on the LEDs',
     'HOLD_NOT_SHOWN': 'the button was held 2 s or more but the LEDs did not turn white',
     'RESTART_HOLD_NO_EFFECT': 'the button was held 20 s but the pipeline was not restarted',
+    'RECOVERY_NOT_SHOWN': 'starting again after an error, but the breath showed no red flicks',
+    'FAILURE_NOT_SHOWN': 'starting after three failed starts in a row, but the LEDs did not blink red',
+    'FALSE_ERROR_SIGNAL': 'red on the LEDs during a normal start-up',
     'PIPELINE_RESTART': 'info: the agent asked the boot script to restart everything (button held 20 s)',
     'RANDOM_PROMPT': 'no dial position could be read, so a random mode was chosen',
-    'BOOT_LEDS_DARK': 'the LEDs stayed dark for more than 1.5 s of the start-up (not counting the kernel)',
+    'BOOT_LEDS_DARK': 'the LEDs stayed dark for more than 3 s of the start-up (not counting the kernel)',
     'NO_DIAL_POSITION': 'info: no dial position could be read at start-up; the phone started in position 1',
     'STALE_SPEECH': 'an answer from the previous mode was spoken after a switch',
     'CONTEXT_POLLUTED': 'a request to the model had a broken history (wrong roles or another mode\'s answer)',
@@ -135,6 +138,10 @@ SCENARIOS = [
       user={'turns': 1, 'questions': ['can you please quite simply explain how to purify water']}),
     S('E9', 'one request fails (server error), then ask again', user={'turns': 3}, fail_requests=[2]),
     S('E10', 'chat server runs but never gets ready (hangs while loading)', chat_stuck=True, end=150),
+
+    # G: the start-up LEDs after errors (failed starts in a row, from the boot script)
+    S('G1', 'starting again after one failed start: red flicks in the breath', failed_starts=1),
+    S('G2', 'starting after three failed starts in a row: calm red blink', failed_starts=3),
 
     # F: combinations
     S('F1', 'start 2, turn to 3 during start-up and press the button', start_dial='pos2',

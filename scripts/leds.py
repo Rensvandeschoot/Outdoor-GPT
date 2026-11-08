@@ -4,6 +4,11 @@ The thinking pause on a small model is long enough that silence reads as a
 fault; the LEDs show what is actually happening. Colours (device_settings.py):
 
     starting   turquoise, slow breath  (the phone is starting up)
+               ... with a short red flick in every breath: starting again
+               after an error (see the boot logs at home)
+               red, blinking calmly: started and failed 3 times in a row,
+               or waiting to start again after an error; hold the button
+               20 s or switch off and on, and read the boot logs
     listening  green                   (your turn: the mic is open)
     thinking   blue, pulsing           (the model is generating)
     speaking   orange                  (the phone is talking, so wait)
@@ -22,6 +27,7 @@ is the instruction card, a few seconds of a breath held still.
 """
 
 import math
+import os
 import threading
 import time
 
@@ -38,6 +44,24 @@ COLOURS = device_settings.LED_COLOURS
 POLL_INTERVAL = 0.05    # how often we look at the agent's state
 PULSE_PERIOD = 1.6      # seconds for one full breath while thinking
 BOOT_PERIOD = 4.0       # seconds for one breath while starting: slower, calmer
+FLICK = 0.25            # the red flick in each breath after an error, seconds
+BLINK_PERIOD = 2.0      # red blink when it keeps failing: on, then off, calmly
+BLINK_ON = 0.6
+FAILING_AFTER = 3       # failed starts in a row before the start blinks red
+
+
+def boot_mode_from_env():
+    """How this start should look, from the failed starts in a row that the
+    boot script counts (OUTDOORGPT_FAILED_STARTS): 'normal', 'recovering'
+    (it went wrong before, it is trying again) or 'failing' (it keeps going
+    wrong: needs a hand)."""
+    try:
+        failed = int(os.environ.get('OUTDOORGPT_FAILED_STARTS', '0'))
+    except ValueError:
+        failed = 0
+    if failed >= FAILING_AFTER:
+        return 'failing'
+    return 'recovering' if failed > 0 else 'normal'
 
 
 def apa102_frame(colours, brightness):
@@ -68,9 +92,11 @@ def level(wave):
 class StatusLeds:
     """Mirrors the agent's state onto the HAT LEDs from a background thread."""
 
-    def __init__(self, output_handler=None, verbose=False):
+    def __init__(self, output_handler=None, verbose=False, boot='normal'):
+        """boot: how 'starting' looks (boot_mode_from_env())."""
         self._handler = output_handler
         self._verbose = verbose
+        self._boot = boot
         self._spi = None
         self._thread = None
         self._stop = threading.Event()
@@ -173,8 +199,15 @@ class StatusLeds:
                 return COLOURS['hold'], MAX_BRIGHTNESS
         state = self._state()
         if state == 'starting':
+            if self._boot == 'failing':
+                on = (now % BLINK_PERIOD) < BLINK_ON
+                return (COLOURS['error'], MAX_BRIGHTNESS) if on else (COLOURS['off'], 0)
             if now < self._ack_until:
                 return COLOURS['starting'], MAX_BRIGHTNESS
+            if self._boot == 'recovering' and (now % BOOT_PERIOD) < FLICK:
+                # Between two breaths, at their darkest: something went wrong
+                # before this start, worth a look in the boot logs at home.
+                return COLOURS['error'], MAX_BRIGHTNESS
             return COLOURS['starting'], level(breath(now, BOOT_PERIOD))
         if state == 'thinking':
             return COLOURS['thinking'], level(breath(now, PULSE_PERIOD))
@@ -205,3 +238,22 @@ class StatusLeds:
                 self._spi.close()
             except Exception:
                 pass
+
+
+if __name__ == "__main__":
+    # python leds.py --error : blink red calmly until stopped. The boot script
+    # runs this while it waits to start the agent again after an error, when
+    # no agent is there to drive the LEDs.
+    import argparse
+    import signal
+    ap = argparse.ArgumentParser(description="Blink the status LEDs red until stopped.")
+    ap.add_argument("--error", action="store_true", required=True)
+    ap.parse_args()
+    done = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: done.set())
+    signal.signal(signal.SIGINT, lambda *_: done.set())
+    leds = StatusLeds(boot='failing')
+    if leds.start():
+        while not done.is_set():
+            time.sleep(0.1)
+        leds.stop()

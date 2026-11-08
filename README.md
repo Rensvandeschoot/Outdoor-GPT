@@ -398,6 +398,8 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 | Colour | Meaning |
 | ------ | ------- |
 | Turquoise, slow breath | Starting up: from the first second of the agent's process until it is ready (~30 s) |
+| Turquoise breath with a short red flick | Starting again after an error. It recovers by itself; read the boot logs at home (`logs/boot/`) to see what went wrong |
+| Red, blinking calmly | Waiting to start again after an error, or the start failed three times in a row: hold the button 20 s or switch off and on, and read the boot logs |
 | Green | Your turn — the mic is open and it is listening |
 | Blue, pulsing | The model is generating |
 | Orange | The phone is talking, so wait |

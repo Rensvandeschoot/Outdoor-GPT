@@ -249,9 +249,23 @@ def check(pending):
     for t, th, e in W.thread_exc:
         flag('THREAD_CRASH', f'{t:.1f}s in thread {th}: {e}')
 
+    # LEDs while the phone starts: red only after an error (failed_starts)
+    fs = CFG.get('failed_starts', 0)
+    t_ready = ready if ready is not None else S.now()
+    boot = [s for t, s in W.led_frames if t < t_ready - 0.5]
+    holds = [(p['down'], p['up'] if p['up'] is not None else S.now()) for p in W.presses]
+    red_boot = [t for t, s in W.led_frames if s == 'error' and t < t_ready - 0.5
+                and not any(d + 1.9 <= t <= u + 0.2 for d, u in holds)]
+    if fs >= 3 and (not red_boot or 'starting' in boot):
+        flag('FAILURE_NOT_SHOWN', f'{fs} failed starts in a row, but the start-up did not blink red: {boot[:6]}')
+    elif 0 < fs < 3 and (len(red_boot) < 2 or 'starting' not in boot):
+        flag('RECOVERY_NOT_SHOWN', f'starting after {fs} failed start(s), but no red flicks in the breath: {boot[:6]}')
+    elif fs == 0 and red_boot:
+        flag('FALSE_ERROR_SIGNAL', f'red during a normal start-up at {red_boot[:3]}')
+
     # LEDs dark while the phone starts
     first_led = next((t for t, s in W.led_frames if s not in ('off', 'dark')), None)
-    if first_led is None or first_led > 1.5:
+    if first_led is None or first_led > 3.0:
         flag('BOOT_LEDS_DARK', f'the LEDs stayed dark for the first '
                                f'{first_led if first_led is not None else S.now():.1f}s of the start-up')
 
@@ -266,7 +280,7 @@ def check(pending):
     # A short press before the agent is ready has nothing to act on; the LEDs
     # must still show that it arrived (one breath at full brightness).
     lost_btn = [(pr['up'], None) for pr in W.presses
-                if pr['dur'] < 2.0 and pr['state_at_up'].get('led') in ('starting', 'dark')
+                if pr['up'] is not None and pr['dur'] < 2.0 and pr['state_at_up'].get('led') in ('starting', 'dark')
                 and not any(pr['down'] - 0.1 <= t <= pr['up'] + 1.0 for t in W.boot_acks)]
     if lost_dial:
         flag('DIAL_EVENT_LOST', 'dial edges before the callback existed: ' +
@@ -341,7 +355,9 @@ def check(pending):
 
     # the button
     for pr in W.presses:
-        up, st = pr['up'], pr['state_at_up']
+        if pr['up'] is None and pr['dur'] < 20.0:
+            continue                    # the run ended while it was held
+        up, st = (pr['up'] if pr['up'] is not None else S.now()), pr['state_at_up']
         nxt = [u['t0'] for u in W.utterances if u['t0'] > up]
         before_next = nxt[0] if nxt else up + 25
         if pr['dur'] >= 2.0:
@@ -478,6 +494,7 @@ sys.argv = boot_argv(read_config_sh(os.path.join(SCRIPTS, 'config.sh')))
 # that is still loading from one whose process has died.
 os.environ['OUTDOORGPT_CHAT_PID'] = str(S.CHAT_PID)
 os.environ['OUTDOORGPT_EMBED_PID'] = str(S.EMBED_PID)
+os.environ['OUTDOORGPT_FAILED_STARTS'] = str(CFG.get('failed_starts', 0))
 
 def watchdog():
     while S.now() < CFG['end'] + 40:

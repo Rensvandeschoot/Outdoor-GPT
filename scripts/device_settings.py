@@ -56,6 +56,6 @@ LED_COLOURS = {
     'speaking':  (255, 80, 0),    # the phone is talking, so wait
     'done':      (180, 0, 255),   # recipe delivered; press the button for a new one
     'hold':      (255, 255, 255), # button held 2 s: let go now and this mode starts over
-    'error':     (255, 0, 0),     # button held towards 20 s (restart); errors
+    'error':     (255, 0, 0),     # errors (blinks, or flicks in the start-up breath); button held towards 20 s
     'off':       (0, 0, 0),       # only on shutdown
 }
