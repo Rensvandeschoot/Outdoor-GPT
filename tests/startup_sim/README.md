@@ -43,9 +43,11 @@ a phase: `ready`, `start_msg`, `say`, `gen_start` (blue), `answer` (orange), `re
 - **B** the dial turned during start-up, at every phase from imports to the start message.
 - **C** the dial turned while listening, while you talk, while it thinks, while it answers,
   while a recipe is written; quick double turns; contact bounce.
-- **D** the yellow button, short and long, in every phase, including after a recipe.
-- **E** slow, missing and dying servers, a warm restart, a 40-question conversation,
-  a one-off server error, and a question that contains "please quite".
+- **D** the yellow button: a press in every phase (including after a recipe and while one is
+  written), 2 s holds, and 20 s holds while listening and during start-up.
+- **E** slow, missing, hanging and dying servers, a warm restart, a 40-question
+  conversation, a one-off server error, and a question that contains "please quite".
+- **G** the start-up LEDs after one and after three failed starts in a row.
 - **F** combinations; **Z** 20 random combinations of dial turns and presses.
 
 Each fixed scenario runs with 3 seeds; E7 and the random ones once.
@@ -61,9 +63,13 @@ what it says, does the agent stay alive.
 
 `harness.py` simulates one agent process. What happens when that process ends is up to
 `startup_script.sh`; `test_boot_script.sh` runs the real script under bash with a fake
-`python` and a fake `llama-server` and checks that it restarts what has stopped.
+`python` and a fake `llama-server` and checks: restarts with a growing wait, a dead server
+started again, a clean stop on SIGTERM, five boot logs kept, exit codes 4 and 3 (servers
+replaced; 3 at once), the failed-start count and the red blink between restarts, and,
+where `flock` exists, that a second copy is refused.
 
 ## Results
 
-`results/` holds the report for the code before the fixes (`baseline_0220b54.md`) and
-after them. `results.jsonl` (every run in full) is not committed.
+`results/` holds a report per stage: the code before the fixes (`baseline_0220b54.md`),
+after the first round (`after_4a602c6.md`) and after the button and LED work
+(`after_804d92b.md`). `results.jsonl` (every run in full) is not committed.

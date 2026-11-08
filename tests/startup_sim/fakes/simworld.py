@@ -44,6 +44,8 @@ def install_clock():
 
 PIN_BUTTON = 22
 DIAL_PINS = {'pos1': 23, 'pos2': 24, 'pos3': 17}
+CHAT_PID = 90001        # what the boot script hands the agent in OUTDOORGPT_*_PID
+EMBED_PID = 90002
 
 W = None
 
@@ -71,6 +73,7 @@ class World:
         self.eink = []
         self.convlog = []
         self.presses = []
+        self.boot_acks = []     # 'starting' shown at full brightness: a press acknowledged
         self.dial_moves = []
         self.stdout = []
         self.thread_exc = []
@@ -141,7 +144,9 @@ class World:
         self.dial_pos = pos
         for p, pin in DIAL_PINS.items():
             self.pins[pin] = (p == pos) and pin not in self.broken_pins
-        self.pins[PIN_BUTTON] = False
+        # button_stuck: the button pin reads pressed from power-up (a wiring
+        # fault, a normally-closed switch, a stuck button).
+        self.pins[PIN_BUTTON] = bool(self.cfg.get('button_stuck'))
 
     def turn_dial(self, pos, gap=0.04, bounce=0):
         """Break-before-make: old contact opens, then the new one closes."""
@@ -162,18 +167,20 @@ class World:
             self.set_pin(pin, True)
 
     def press(self, dur):
-        t0 = now()
+        # Recorded when pressed, completed when let go: a 20 s hold ends the
+        # run (pipeline restart) before it is let go.
+        rec = {'down': round(now(), 2), 'up': None, 'dur': dur, 'state_at_up': {}}
+        self.presses.append(rec)
         self.ev('press', dur=dur)
         self.set_pin(PIN_BUTTON, True)
         sleep(dur)
         self.set_pin(PIN_BUTTON, False)
-        self.presses.append({'down': round(t0, 2), 'up': round(now(), 2), 'dur': dur,
-                             'state_at_up': self.snapshot_state()})
+        rec.update(up=round(now(), 2), state_at_up=self.snapshot_state())
 
     # -- servers ----------------------------------------------------------
     def chat_ready(self):
         c = self.cfg
-        if c.get('chat_dead'):
+        if c.get('chat_dead') or c.get('chat_stuck'):
             return False
         if self.chat_killed_at is not None and now() >= self.chat_killed_at:
             return False
@@ -183,6 +190,18 @@ class World:
         if self.cfg.get('embed_dead'):
             return False
         return now() >= self.embed_start + self.cfg['_embed_load']
+
+    def server_alive(self, pid):
+        """Stands in for voice_agent_utils.pid_alive. chat_dead / embed_dead:
+        the process exited at once (a model file missing); chat_stuck: it runs
+        but never answers; kill_chat: it dies at that moment."""
+        c = self.cfg
+        if pid == CHAT_PID:
+            killed = self.chat_killed_at is not None and now() >= self.chat_killed_at
+            return not c.get('chat_dead') and not killed
+        if pid == EMBED_PID:
+            return not c.get('embed_dead')
+        return True
 
     # -- audio ------------------------------------------------------------
     @property
@@ -264,6 +283,8 @@ class World:
             if state != self.led_state:
                 self.led_frames.append((round(now(), 2), state))
             self.led_state = state
+            if state == 'starting' and bri >= device_settings.LED_MAX_BRIGHTNESS:
+                self.boot_acks.append(round(now(), 2))
 
     # -- agent state ------------------------------------------------------
     def va_mode(self):

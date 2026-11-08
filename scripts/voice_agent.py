@@ -71,6 +71,8 @@ class LLmToAudio:
                  eink=None,          # EinkRecipeDisplay made by the CLI, which draws on it before this exists
                  max_history_turns=voice_agent_utils.DEFAULT_MAX_HISTORY_TURNS,   # 0 = no turn limit
                  max_history_chars=voice_agent_utils.DEFAULT_MAX_HISTORY_CHARS,
+                 server_pid=None,    # llama-server's PID from the boot script, if any
+                 server_wait=voice_agent_utils.SERVER_WAIT_CEILING,
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
@@ -95,6 +97,10 @@ class LLmToAudio:
         # listening, no more generating, so the answer and the panel stay put
         # while you cook. Cleared by start(), i.e. by any reset or mode switch.
         self.recipe_delivered = False
+        # True from the moment the ingredient list is confirmed until the next
+        # turn: "Thanks, give me a moment" and the writing of the recipe. The
+        # button then starts a new recipe instead of only stopping speech.
+        self.recipe_requested = False
         # True from the moment the prompt goes to the LLM until generation
         # ends. is_processing is no use for this: it only turns on once a
         # sentence is ready to speak, so the thinking pause itself -- the bit
@@ -155,7 +161,11 @@ class LLmToAudio:
         ## Init LLM and prompts
         self.llm_server_url = llm_server_url
         self.llm_client = LLMClient(base_url=llm_server_url, api_key=voice_agent_utils.DEFAULT_LLM_SERVER_API_KEY)
-        self.llm_client.wait_for_ready(max_retries=30, retry_delay=1.0)
+        # Was a fixed 30 x 1 s: a model that loaded slower than that (crank
+        # power, a cold SD card) ended the agent. Now: as long as the server's
+        # process lives, up to server_wait; at once when it has died.
+        voice_agent_utils.wait_for_server(self.llm_client.health, "LLM server",
+                                          pid=server_pid, ceiling=server_wait)
         if tts_warmup:
             # The first synthesis pays onnxruntime's one-off setup cost and is
             # heavier than any later sentence. Paying it here, with both
@@ -222,6 +232,7 @@ class LLmToAudio:
             {'role': 'system', 'content': self.system_prompt},
         ]
         self.recipe_delivered = False
+        self.recipe_requested = False
         self.recipe_intake.reset()
         self.is_generating = False
 
@@ -706,6 +717,7 @@ class LLmToAudio:
         # definition, marker or not.
         if self.turn_cancelled.is_set():
             return
+        self.recipe_requested = False
         expect_recipe = False
         if self.recipe_mode and not self.recipe_delivered:
             action, payload = self.recipe_intake.receive(user_prompt)
@@ -715,6 +727,7 @@ class LLmToAudio:
             if action == 'retry':
                 self._say(voice_agent_utils.RECIPE_RETRY)
                 return
+            self.recipe_requested = True
             self._say(voice_agent_utils.RECIPE_COOKING)
             # _say clears interrupt_event to speak; a mode switch during that
             # line must still stop the recipe from being written.
@@ -1270,6 +1283,8 @@ class VoiceAgent():
         # A mode switch or restart asked for by the dial or the button, waiting
         # for the run loop (see request_reset). Newest request wins.
         self._pending_reset = None
+        # The button pressed during the thinking pause (see request_cancel).
+        self._pending_cancel = False
         self._pending_lock = threading.Lock()
 
     def _info(self, text):
@@ -1353,6 +1368,21 @@ class VoiceAgent():
         self.input_handler.abort_event.set()
         self.output_handler.cancel_turn()
 
+    def request_cancel(self):
+        """Drop the question being thought about; any thread.
+
+        For the button during the thinking pause, which used to do nothing
+        there: only speech could be stopped. The turn is cut short like for a
+        switch (at the latest at the model's next token); the run loop then
+        drops the unanswered question and listens again. The conversation
+        and the mode stay as they were.
+        """
+        with self._pending_lock:
+            if self._pending_reset is not None:
+                return  # a reset is coming anyway
+            self._pending_cancel = True
+        self.output_handler.cancel_turn()
+
     def _reset_pending(self):
         with self._pending_lock:
             return self._pending_reset is not None
@@ -1361,9 +1391,34 @@ class VoiceAgent():
         """Carry out a requested reset, if any. Run loop only."""
         with self._pending_lock:
             settings, self._pending_reset = self._pending_reset, None
+            if settings is not None:
+                self._pending_cancel = False  # the reset covers it
         if settings is None:
             return False
         self._do_full_reset(**settings)
+        return True
+
+    def _take_pending_cancel(self):
+        """Finish a cancelled turn and go back to listening. Run loop only."""
+        with self._pending_lock:
+            if not self._pending_cancel:
+                return False
+            self._pending_cancel = False
+        oh, ih = self.output_handler, self.input_handler
+        oh.interrupt_event.set()
+        if oh.is_speaking or oh.is_processing:
+            oh.interrupt()
+        deadline = time.time() + 10.0
+        while oh.is_processing and time.time() < deadline:
+            time.sleep(0.05)
+        # The question was never answered: keep the history question/answer.
+        if len(oh.messages) > 1 and oh.messages[-1]['role'] == 'user':
+            oh.messages.pop()
+        oh.is_generating = False
+        oh.turn_cancelled.clear()
+        ih.abort_event.clear()
+        oh.interrupt_event.clear()
+        self._info("Question dropped (button); listening again")
         return True
 
     def _do_full_reset(self, system_prompt=None, start_message=None, recipe_mode=None,
@@ -1390,9 +1445,9 @@ class VoiceAgent():
             time.sleep(0.05)
 
         # The panel is deliberately not touched: it is bistable, so the last
-        # recipe stays readable after turning the dial away from recipes. The
-        # button is different: the CLI draws the instruction card on every
-        # press before it asks for a reset.
+        # recipe stays readable after turning the dial away from recipes.
+        # Holding the button 2 s is different: the CLI draws the instruction
+        # card before it asks for the reset.
         if recipe_mode is not None:
             oh.recipe_mode = recipe_mode
         if rag_enabled is not None:
@@ -1452,6 +1507,8 @@ class VoiceAgent():
             # out here, between turns (see request_reset).
             if self._take_pending_reset():
                 idle_notified = False
+                continue
+            if self._take_pending_cancel():
                 continue
 
             # Recipe mode is one-shot: after a recipe has been delivered we stop
@@ -1583,8 +1640,8 @@ class VoiceAgent():
 
         # Switch recipe mode with the prompt. The panel is deliberately not
         # touched here: it is bistable, so the last recipe stays readable after
-        # turning the dial away from recipes. The button is different: the CLI
-        # draws the instruction card on every press before it gets here.
+        # turning the dial away from recipes. Holding the button 2 s is different:
+        # the CLI draws the instruction card before it asks for the reset.
         if recipe_mode is not None and hasattr(self, 'output_handler'):
             self.output_handler.recipe_mode = recipe_mode
         if rag_enabled is not None and hasattr(self, 'output_handler'):

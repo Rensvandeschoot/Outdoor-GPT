@@ -8,7 +8,7 @@ keep cranking just to hold the recipe on screen.
 
 It also draws the instruction card (eink_instructions.png next to this file,
 made by make_eink_instructions.py): at start-up, while the models are still
-loading, and again on every press of the button. Pictures use the panel's
+loading, and again when the button is held 2 s to start over. Pictures use the panel's
 four grey levels; recipe text stays black on white.
 
 Design goals

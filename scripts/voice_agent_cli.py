@@ -15,10 +15,15 @@
 #
 # Controls:
 #   Rotary dial       - selects one of the first three prompts (full reset)
-#   Interrupt button  - stops the agent mid-speech; after a recipe has been
-#                       delivered, starts a new recipe session instead
+#   Yellow button     - press: stops the agent talking or thinking; in recipe
+#                       mode (a recipe being written or delivered) starts a
+#                       new recipe instead
+#                     - hold 2 s: starts this mode over (opening line,
+#                       cleared conversation)
+#                     - hold 20 s: restarts the whole pipeline (exit code 3
+#                       for the boot script); see button_gestures.py
 #   Keyboard (with --enable_keyboard_control):
-#     ENTER           - same as the interrupt button
+#     ENTER           - same as a press of the button
 #     SPACE           - mute / unmute the microphone
 #     g / s / f       - prompt 1 / 2 / 3, mirroring the dial
 #
@@ -26,14 +31,19 @@
 # silence it until the boot script restarts it); --exit_phrase "please quit"
 # turns it on for a session at a desk, matched as whole words.
 
+import os
+import sys
+import tempfile
 import threading
 import time
 start_time = time.time()
 print("Loading Voice Agent...")
 
-from voice_agent import VoiceAgent
+# Light imports only up here. The heavy ones (numpy, onnxruntime, the speech
+# libraries: ~8 s on the Pi) come inside main(), after the status LEDs and
+# the GPIO are up, so the phone shows it is starting from its first second
+# instead of staying dark for half a minute.
 import voice_agent_utils
-from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper, create_conversation_log_file
 from opi.gpio_utils import POSITION_KEYS
 
 # Rotary dial: 3 positions mapped to the first 3 prompts in prompts.json.
@@ -44,23 +54,50 @@ ROTARY_POSITION_TO_PROMPT_INDEX = {
 }
 ROTARY_SETTLE_DELAY = 0.5
 
-print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
+
+def hold_single_instance_lock():
+    """Refuse to run next to another agent; return the lock (keep it open).
+
+    A second agent, started by hand while the boot service runs one, fails
+    on the GPIO pins, the sound card or the server ports with errors that
+    do not say why. This says why. Linux only (fcntl); elsewhere no lock.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    lock_dir = '/run' if os.access('/run', os.W_OK) else tempfile.gettempdir()
+    lock = open(os.path.join(lock_dir, 'outdoorgpt-agent.lock'), 'w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(">> Another OutdoorGPT agent is already running, probably the boot service. "
+              "Stop it first: systemctl stop dietpi-autostart_custom.service")
+        sys.exit(1)
+    return lock
 
 
 def main():
     """Main function to run the LLM to Audio output streamer."""
-    
+
     parser = voice_agent_utils.get_cli_argument_parser()
     args = parser.parse_args()
+    instance_lock = hold_single_instance_lock()  # noqa: F841 - held until exit
 
-    voice_agent_utils.apply_audio_device_settings(args)
-
-    # Setup prompt selector (either from file or CLI args)
-    prompt_selector = voice_agent_utils.PromptSelector(
-        prompt_file=args.prompt_file,
-        default_system_prompt=args.system_prompt,
-        default_start_message=args.start_message
-    )
+    # Status LEDs first: a slow turquoise breath from the first second until
+    # the agent is ready (attach() below). Fail-safe: no HAT, no spidev, no
+    # LEDs and the agent is unaffected.
+    from leds import StatusLeds, boot_mode_from_env
+    # After an error the boot script says how many starts failed in a row;
+    # the start-up breath then shows it in red (leds.py).
+    boot_mode = boot_mode_from_env()
+    status_leds = StatusLeds(verbose=args.verbose, boot=boot_mode)
+    if status_leds.start():
+        print(">> Status LEDs active (turquoise breath=starting, green=your turn, "
+              "blue=thinking, amber=speaking, purple=done, red=something went wrong)")
+    if boot_mode != 'normal':
+        print(f">> Starting after {os.environ.get('OUTDOORGPT_FAILED_STARTS')} failed start(s) in a row: "
+              f"LEDs show '{boot_mode}'. The boot logs are in logs/boot/.")
 
     # Setup GPIO handler early so we can read the rotary dial for the initial prompt
     gpio_handler = None
@@ -73,6 +110,48 @@ def main():
         gpio_handler.setup(add_interrupt_button=True, add_rotary_dial=True)
         print(f">> GPIO handler: {gpio_handler.__class__.__name__}")
 
+    # The yellow button, watched from now on, while the models still load
+    # (button_gestures.py). Press and 2 s hold need the agent, which does not
+    # exist yet: until it does (ctx['va']), they only show on the LEDs that
+    # they arrived. The 20 s hold works from the start.
+    ctx = {'va': None, 'log_file': None}
+
+    def gesture_press():
+        if ctx['va'] is None:
+            status_leds.acknowledge()
+        else:
+            ctx['on_press']()
+
+    def gesture_hold():
+        if ctx['va'] is None:
+            status_leds.acknowledge()
+        else:
+            ctx['on_hold']()
+
+    def gesture_restart():
+        """Held 20 s: restart both servers and the agent (the boot script does
+        that on exit code EXIT_RESTART_PIPELINE). os._exit, not sys.exit: this
+        must work even when the rest of the agent hangs."""
+        print(">> Button held 20 s: restarting the whole pipeline")
+        status_leds.show_restart()
+        if ctx['log_file']:
+            try:
+                ctx['log_file'].write("\n[RESTART] button held 20 s\n")
+                ctx['log_file'].flush()
+            except Exception:
+                pass
+        sys.stdout.flush()
+        os._exit(voice_agent_utils.EXIT_RESTART_PIPELINE)
+
+    button = None
+    if gpio_handler:
+        from button_gestures import ButtonGestures
+        button = ButtonGestures(gpio_handler.is_interrupt_pressed, gesture_press, gesture_hold,
+                                gesture_restart, leds=status_leds, verbose=args.verbose)
+        button.start()
+        print(">> Yellow button: press = stop (a new recipe in recipes), hold 2 s = start this mode over, "
+              "hold 20 s = restart everything")
+
     # The e-ink panel next, before any model loads: the instruction card goes
     # up while the phone is still starting, so the screen explains what to do
     # from the first seconds of power. After the GPIO setup on purpose, so the
@@ -82,7 +161,21 @@ def main():
     eink = EinkRecipeDisplay(verbose=args.verbose)
     eink.render_image_async()
 
-    # Pick initial prompt: from rotary dial if available, else random
+    # Now the heavy imports, with the LEDs breathing and the card going up.
+    from voice_agent import VoiceAgent
+    from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper, create_conversation_log_file
+    print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
+
+    voice_agent_utils.apply_audio_device_settings(args)
+
+    # Setup prompt selector (either from file or CLI args)
+    prompt_selector = voice_agent_utils.PromptSelector(
+        prompt_file=args.prompt_file,
+        default_system_prompt=args.system_prompt,
+        default_start_message=args.start_message
+    )
+
+    # Pick initial prompt: from the rotary dial; without GPIO (a PC), random
     initial_prompt = None
     if gpio_handler:
         rotary_pos = gpio_handler.get_current_position()
@@ -91,7 +184,13 @@ def main():
             initial_prompt = prompt_selector.prompts[idx]
             print(f">> Initial prompt from rotary dial position '{rotary_pos}': {initial_prompt.get('name', 'unnamed')}")
         else:
-            print(f">> No valid rotary position detected (got {rotary_pos!r}), using random prompt")
+            # The dial rests between two positions, or a wire is loose. A
+            # random pick made the phone start differently on every boot;
+            # position 1 at least is the same every time. If the dial settles
+            # before the phone is ready, adopt_dial_position() takes it over.
+            initial_prompt = prompt_selector.prompts[0]
+            print(f">> WARNING: no rotary position detected (got {rotary_pos!r}): between two "
+                  f"positions, or a loose wire? Starting in position 1: {initial_prompt.get('name', 'unnamed')}")
     if initial_prompt is None:
         initial_prompt = prompt_selector.get_random_prompt()
 
@@ -141,6 +240,8 @@ def main():
             embedding_server_url=args.embedding_server_url,
             top_k=args.rag_top_k,
             min_score=args.rag_min_score,
+            server_pid=voice_agent_utils.env_pid('OUTDOORGPT_EMBED_PID'),
+            server_wait=args.server_wait,
         )
         print(f">> RAG enabled: {len(rag_retriever.chunks)} chunks from '{args.rag_index}'")
 
@@ -165,16 +266,16 @@ def main():
         tts_warmup=args.tts_warmup,
         tts_threads=args.tts_threads,
         eink=eink,
+        # Set by the boot script, so a dead server ends the wait at once.
+        server_pid=voice_agent_utils.env_pid('OUTDOORGPT_CHAT_PID'),
+        server_wait=args.server_wait,
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
-    # Status LEDs on the audio HAT. Fail-safe: no HAT, no spidev, no LEDs and
-    # the agent is unaffected. Reads the handler's own state, so there is
-    # nothing to keep in sync at the call sites.
-    from leds import StatusLeds
-    status_leds = StatusLeds(va.output_handler, verbose=args.verbose)
-    if status_leds.start():
-        print(">> Status LEDs active (green=your turn, blue=thinking, orange=speaking, purple=done)")
+    # The LEDs stop breathing 'starting' and mirror the agent from here on.
+    # They read the handler's own state, so there is nothing to keep in sync
+    # at the call sites.
+    status_leds.attach(va.output_handler)
 
     va.start()
     print(f">> Took {time.time()-t1:.2f} secs to initialize Voice Agent <<")
@@ -222,18 +323,35 @@ def main():
             print(f"[Interrupt agent #{button_press_count['n']} done]")
 
     def on_button_press():
-        """Interrupt the agent, or start a fresh recipe session."""
-        # Every press puts the instruction card back on the screen: the button
-        # means "start over", and the card is what a newcomer needs to see.
-        eink.render_image_async()
+        """Short press: stop the agent talking or thinking; in recipes, start
+        a fresh recipe session."""
+        # No instruction card here (only at start-up and on the 2 s hold): a
+        # redraw holds the SPI bus shared with the LEDs for ~7 s, so the
+        # lights froze after every press, just when they should show what
+        # the press did. In recipes the last recipe stays up until the next
+        # one is drawn.
+        oh = va.output_handler
         # Recipe mode delivers one recipe and then stops listening, so there is
         # nothing to interrupt. Restart the same mode instead: cleared context
-        # and the opening question again, ready for new ingredients.
-        if getattr(va.output_handler, 'recipe_delivered', False):
+        # and the opening question again, ready for new ingredients. The same
+        # while a recipe is being written: the press means "not this one".
+        if getattr(oh, 'recipe_delivered', False) or getattr(oh, 'recipe_requested', False):
             switch_to_prompt(current_prompt['p'])
             return
-        if va.output_handler.is_speaking or va.output_handler.is_processing:
+        if oh.is_speaking or oh.is_processing:
             on_interrupt_agent()
+            return
+        # The thinking pause (blue): drop this question and listen again; the
+        # conversation stays. A press here used to do nothing.
+        if getattr(oh, 'is_generating', False):
+            va.request_cancel()
+
+    def on_button_hold():
+        """Held 2 s: start this mode over, its opening line and a cleared
+        conversation; in recipes that is a new recipe. The instruction card
+        goes back on the screen: starting over is what a newcomer does."""
+        eink.render_image_async()
+        switch_to_prompt(current_prompt['p'])
 
     def switch_to_prompt(new_prompt):
         # Called from the dial's timer and the button's callback thread. The
@@ -252,10 +370,11 @@ def main():
             silence_seconds=silence_for(new_prompt)
         )
 
-    # Setup GPIO interrupt button via gpio_handler
-    if gpio_handler:
-        gpio_handler.set_interrupt_callback(on_button_press)
-        print(">> GPIO interrupt button enabled (interrupts speech; restarts recipe mode once a recipe is done)")
+    # The button now acts on the agent (it was watched since the start). Its
+    # upstream callback (gpio_handler.set_interrupt_callback) is not used:
+    # that one fires on release only, and swallows holds of 2 s or more.
+    ctx.update(on_press=on_button_press, on_hold=on_button_hold, log_file=log_file)
+    ctx['va'] = va
 
     # -- rotary switch -> prompt selection --
     # Debounce so dial sweeps don't queue multiple prompt switches, and
@@ -372,6 +491,8 @@ def main():
                 print("==================================")
             else:
                 print("\n>> No TTFB samples collected.")
+        if button:
+            button.stop()
         # Cancel any pending rotary debounce timer
         if rotary_state.get('timer'):
             rotary_state['timer'].cancel()
@@ -385,5 +506,17 @@ def main():
         if log_file:
             log_file.close()
 
+
+def cli():
+    """main(), with the exit codes the boot script acts on."""
+    try:
+        main()
+    except voice_agent_utils.ServerNotReady as e:
+        print(f">> {e}")
+        # A server whose process runs but never got ready will not get
+        # better by restarting only the agent: ask for both servers too.
+        sys.exit(voice_agent_utils.EXIT_SERVER_STUCK if e.stuck else 1)
+
+
 if __name__ == "__main__":
-    main()
+    cli()

@@ -12,6 +12,11 @@ The HAT does not use a chip select, so the device number mainly decides which
 CE line toggles. If nothing lights up, try the other one:
 
     ./venv/bin/python test_leds.py --bus 0 --device 0
+
+To see every status colour of device_settings.py in turn, named, as the phone
+shows them (speaking amber and error red must be easy to tell apart):
+
+    ./venv/bin/python test_leds.py --states
 """
 
 import argparse
@@ -26,6 +31,9 @@ def main():
     ap.add_argument("--bus", type=int, default=0)
     ap.add_argument("--device", type=int, default=1)
     ap.add_argument("--brightness", type=int, default=8, help="0-31, keep it low")
+    ap.add_argument("--states", action="store_true",
+                    help="show each status colour of device_settings.py in turn, named, at the "
+                         "phone's own brightness: to check that they can be told apart")
     args = ap.parse_args()
 
     try:
@@ -53,6 +61,20 @@ def main():
         ("all blue",  [(0, 0, 255)] * N_LEDS),
         ("one at a time", None),
     ]
+
+    if args.states:
+        # The status colours exactly as leds.py shows them. Speaking (amber)
+        # and error (red) in particular must not be mistaken for each other.
+        import device_settings
+        bright = device_settings.LED_MAX_BRIGHTNESS
+        print(f"status colours from device_settings.py, brightness {bright}:")
+        for name, rgb in device_settings.LED_COLOURS.items():
+            if name == 'off':
+                continue
+            print(f"  {name:10s} {rgb}")
+            spi.writebytes(frame([rgb] * N_LEDS, bright))
+            time.sleep(2.5)
+        steps = []
 
     print(f"writing to /dev/spidev{args.bus}.{args.device}, brightness {args.brightness}")
     print("watch the three LEDs on the audio HAT...")
