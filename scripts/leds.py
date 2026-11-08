@@ -24,6 +24,12 @@ into a no-op and the agent runs exactly as it would without it.
 The LEDs share SPI0 with the e-ink panel, so every write takes spi_bus.LOCK.
 While a picture is being drawn the animation simply pauses; at start-up that
 is the instruction card, a few seconds of a breath held still.
+
+The frame is sent again every REFRESH seconds even when it has not changed.
+APA102s have no chip select: whatever passes on the shared data and clock
+lines (the panel's own data, noise on a crank supply, a dip in the 5 V) can
+leave them showing random colours, and an unchanged frame that is never sent
+again would leave those colours up.
 """
 
 import math
@@ -42,6 +48,7 @@ MAX_BRIGHTNESS = device_settings.LED_MAX_BRIGHTNESS
 COLOURS = device_settings.LED_COLOURS
 
 POLL_INTERVAL = 0.05    # how often we look at the agent's state
+REFRESH = 0.2           # an unchanged frame is sent again after this long
 PULSE_PERIOD = 1.6      # seconds for one full breath while thinking
 BOOT_PERIOD = 4.0       # seconds for one breath while starting: slower, calmer
 FLICK = 0.25            # the red flick in each breath after an error, seconds
@@ -101,6 +108,7 @@ class StatusLeds:
         self._thread = None
         self._stop = threading.Event()
         self._last_written = None
+        self._last_write_time = 0.0
         self._hold = None           # (seconds held, reset after, restart after)
         self._ack_until = 0.0       # brighter breath until then: a press was seen
         self._override = None       # a frame that stays, whatever the state
@@ -128,16 +136,20 @@ class StatusLeds:
         return True
 
     def _write(self, rgb, brightness):
-        """One APA102 update. Skipped when it would change nothing."""
+        """One APA102 update. An unchanged frame is skipped, but only for
+        REFRESH seconds: after that it is sent again, so colours the LEDs
+        picked up from the shared bus or the supply do not stay."""
         if self._spi is None:
             return
-        if (rgb, brightness) == self._last_written:
+        now = time.time()
+        if (rgb, brightness) == self._last_written and now - self._last_write_time < REFRESH:
             return
         data = apa102_frame([rgb] * N_LEDS, brightness)
         try:
             with spi_bus.LOCK:
                 self._spi.writebytes(data)
             self._last_written = (rgb, brightness)
+            self._last_write_time = time.time()
         except Exception as e:
             self._log(f"write failed, disabling LEDs ({e})")
             self._spi = None
