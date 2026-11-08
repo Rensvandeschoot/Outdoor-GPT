@@ -16,7 +16,9 @@
 # can never break the stock modes.
 
 # The one path this script has to know by itself; everything else is in config.sh.
-AGENT_DIR=/root/edge_voice_agent
+# (Taken from the environment only by tests/startup_sim/test_boot_script.sh;
+# at boot it is never set, so the default applies.)
+AGENT_DIR=${AGENT_DIR:-/root/edge_voice_agent}
 
 cd "$AGENT_DIR" || exit 1
 [ -f ./config.sh ] && . ./config.sh
@@ -71,17 +73,19 @@ case $MODE in
         python voice_translate_cli.py --preload-tts --platform $PLATFORM --audio-device-input 1 --audio-device-output 0
         ;;
     3)
-        echo "Starting llama-server (outdoor agent)..."
-        sh start_llamacpp_server.sh > /var/log/llama-server.log 2>&1 &
-
-        echo "Starting embedding server (RAG)..."
-        sh start_embedding_server.sh > /var/log/embedding-server.log 2>&1 &
+        # Server logs go to LOG_DIR (config.sh may set it; default /var/log).
+        # They are emptied once per boot and appended to on every restart
+        # below, so the reason an earlier run stopped is still in them.
+        LOG_DIR=${LOG_DIR:-/var/log}
+        CHAT_LOG="$LOG_DIR/llama-server.log"
+        EMBED_LOG="$LOG_DIR/embedding-server.log"
+        : > "$CHAT_LOG"
+        : > "$EMBED_LOG"
 
         # Conversation logs would otherwise pile up on the SD card for years;
         # keep the newest LOG_KEEP (config.sh) and drop the rest.
         ls -t logs/conversation_*.txt 2>/dev/null | tail -n +$(( ${LOG_KEEP:-50} + 1 )) | xargs -r rm -f
 
-        echo "Starting OutdoorGPT..."
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""
         [ "${VERBOSE:-0}" = "1" ] && VERBOSE_FLAG="--verbose"
@@ -90,11 +94,58 @@ case $MODE in
         [ "${TTS_WARMUP:-0}" = "1" ] && SPEECH_FLAGS="--tts_warmup"
         [ -n "${TTS_THREADS:-}" ] && [ "${TTS_THREADS}" != "0" ] && SPEECH_FLAGS="$SPEECH_FLAGS --tts_threads ${TTS_THREADS}"
         [ -n "${ASR_THREADS:-}" ] && [ "${ASR_THREADS}" != "0" ] && SPEECH_FLAGS="$SPEECH_FLAGS --asr_threads ${ASR_THREADS}"
-        # The agent waits for both servers itself (~30s retry each), so the
-        # background starts above do not need a sleep here.
-        # python -u: unbuffered output, so journal timestamps mark the moment a
-        # line was printed rather than the moment a buffer happened to flush.
-        python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG $SPEECH_FLAGS
+
+        # Off-grid there is nobody with a terminal, so whatever stops is
+        # started again: a server whose process has gone, and the agent
+        # whenever it exits (a crash, a server it could not reach in time, a
+        # turn that failed beyond repair). Without this, any exit left the
+        # phone silent until the power was cycled: DietPi's unit has
+        # RemainAfterExit=yes and no Restart=. The wait between attempts
+        # doubles from RESTART_DELAY (config.sh) up to a minute, and drops
+        # back once the agent has run for two minutes.
+        # systemctl stop/restart (SIGTERM) and Ctrl-C end the loop and take
+        # both servers down with it.
+        CHAT_PID=""
+        EMBED_PID=""
+        stop_all() {
+            echo "Stopping OutdoorGPT..."
+            [ -n "$CHAT_PID" ] && kill "$CHAT_PID" 2>/dev/null
+            [ -n "$EMBED_PID" ] && kill "$EMBED_PID" 2>/dev/null
+            exit 0
+        }
+        trap stop_all INT TERM
+
+        DELAY=${RESTART_DELAY:-3}
+        while true; do
+            # The start scripts exec llama-server, so $! is the server itself.
+            if [ -z "$CHAT_PID" ] || ! kill -0 "$CHAT_PID" 2>/dev/null; then
+                echo "Starting llama-server (outdoor agent)..."
+                sh start_llamacpp_server.sh >> "$CHAT_LOG" 2>&1 &
+                CHAT_PID=$!
+            fi
+            if [ -z "$EMBED_PID" ] || ! kill -0 "$EMBED_PID" 2>/dev/null; then
+                echo "Starting embedding server (RAG)..."
+                sh start_embedding_server.sh >> "$EMBED_LOG" 2>&1 &
+                EMBED_PID=$!
+            fi
+
+            echo "Starting OutdoorGPT..."
+            # The agent waits for both servers itself (~30s retry each), so the
+            # background starts above do not need a sleep here.
+            # python -u: unbuffered output, so journal timestamps mark the moment a
+            # line was printed rather than the moment a buffer happened to flush.
+            STARTED=$SECONDS
+            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} $VERBOSE_FLAG $SPEECH_FLAGS
+            RC=$?
+            RAN=$(( SECONDS - STARTED ))
+            [ "$RAN" -ge 120 ] && DELAY=${RESTART_DELAY:-3}
+            echo "OutdoorGPT stopped (exit code $RC after ${RAN}s); starting it again in ${DELAY}s"
+            # sleep in the background and wait for it, so a SIGTERM is acted
+            # on at once instead of after the sleep.
+            sleep "$DELAY" &
+            wait $!
+            DELAY=$(( DELAY * 2 > 60 ? 60 : DELAY * 2 ))
+        done
         ;;
     *)
         echo "Invalid choice. Exiting."

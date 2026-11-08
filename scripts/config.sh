@@ -76,6 +76,13 @@ ASR_THREADS=2
 # this amount, so keep it as low as the pauses allow.
 SILENCE_SECONDS=0.7
 
+# How many of the latest turns (question + answer) the model gets to see.
+# Older ones are dropped, so a long conversation never outgrows the context
+# (CHAT_CONTEXT): without a limit the server refused the request after some
+# 35 questions and the agent crashed. The agent also caps the history at
+# 6000 characters. 0 = no turn limit.
+HISTORY_TURNS=8
+
 # Set to 1 to run the agent with --verbose at boot. Every question then logs
 # the retrieved chunks ("RAG context injected") to the journal, which is how
 # you check that retrieval is really feeding the model. Read it with:
@@ -87,3 +94,8 @@ VERBOSE=0
 # and would otherwise accumulate on the SD card for years. The boot script
 # keeps the newest LOG_KEEP and deletes the rest.
 LOG_KEEP=50
+
+# Seconds the boot script waits before starting the agent again after it
+# stopped (a crash, a server it could not reach). Doubles on every stop in
+# a row, up to 60, and drops back once the agent has run for two minutes.
+RESTART_DELAY=3

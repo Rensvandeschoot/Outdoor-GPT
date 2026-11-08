@@ -69,12 +69,16 @@ class LLmToAudio:
                  tts_warmup=False,   # synthesise throwaway lines once the servers are up
                  tts_threads=0,      # cap Piper's onnxruntime threads; 0 = default, one per core
                  eink=None,          # EinkRecipeDisplay made by the CLI, which draws on it before this exists
+                 max_history_turns=voice_agent_utils.DEFAULT_MAX_HISTORY_TURNS,   # 0 = no turn limit
+                 max_history_chars=voice_agent_utils.DEFAULT_MAX_HISTORY_CHARS,
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
         self.single_turn = single_turn
         self.show_ttfb = show_ttfb
         self.rag_retriever = rag_retriever
+        self.max_history_turns = max_history_turns
+        self.max_history_chars = max_history_chars
         # Recipe mode: the recipe is drawn on the e-ink panel when one is
         # available, the session ends after a single recipe, and the interrupt
         # button starts the next one. Set per prompt (the "mode" key in
@@ -194,6 +198,11 @@ class LLmToAudio:
         # Thread handlers
         self.stop_event = threading.Event()
         self.interrupt_event = threading.Event()
+        # Set by cancel_turn() when a mode switch or restart is waiting: the
+        # turn in progress is abandoned at its next check. Unlike
+        # interrupt_event, which a new sentence or turn clears again, only
+        # the run loop clears this, once the switch has been carried out.
+        self.turn_cancelled = threading.Event()
         self.lock = threading.Lock()
         self._tts_lock = threading.Lock()  # Protects TTS synthesis and model switching
         self._audio_write_lock = threading.Lock()  # Protects audio stream writes
@@ -279,6 +288,23 @@ class LLmToAudio:
         # 0.5s should be enough for speakers to go silent
         time.sleep(0.5)
 
+
+    def cancel_turn(self):
+        """Abandon the current turn; safe to call from any thread, returns at once.
+
+        No new sentence is started (one already playing finishes; the run
+        loop then stops the stream, see VoiceAgent._do_full_reset), and
+        process_prompt returns at its next check, at the latest when the
+        model sends its next token, without speaking, storing or drawing
+        anything more. Cleared only by the run loop.
+
+        Deliberately does not call interrupt(): that waits for the sentence
+        being written, and done from here it would stop the stream again
+        after the run loop had begun the new start message.
+        """
+        self.turn_cancelled.set()
+        self.interrupt_event.set()
+        self._generation_id += 1
 
     def shutdown(self):
         """Close all resources."""
@@ -614,6 +640,26 @@ class LLmToAudio:
 
     
 
+    def _trim_history(self):
+        """Keep the system prompt and only the latest turns.
+
+        At most max_history_turns turns (the question just asked included)
+        and max_history_chars characters of them; the oldest go first. The
+        history then still starts with a question and ends with the newest
+        one. Without this it grew with every turn until llama-server refused
+        the request for not fitting its context, and the agent crashed.
+        """
+        head, tail = self.messages[:1], self.messages[1:]
+        if self.max_history_turns:
+            tail = tail[-(2 * self.max_history_turns - 1):]
+        while len(tail) > 1 and sum(len(m['content']) for m in tail) > self.max_history_chars:
+            tail = tail[1:]
+        while len(tail) > 1 and tail[0]['role'] != 'user':
+            tail = tail[1:]
+        if len(tail) < len(self.messages) - 1:
+            self._info(f">> history trimmed to the latest {(len(tail) + 1) // 2} turn(s)")
+        self.messages = head + tail
+
     def _piper_with_thread_cap(self, build):
         """Construct a TTS_Piper with its onnxruntime session capped to
         tts_threads threads. PiperVoice.load() takes no session options, so
@@ -658,6 +704,8 @@ class LLmToAudio:
         # then nothing reaches the model or the history. Once confirmed, the
         # model gets a fixed request and its reply is the recipe by
         # definition, marker or not.
+        if self.turn_cancelled.is_set():
+            return
         expect_recipe = False
         if self.recipe_mode and not self.recipe_delivered:
             action, payload = self.recipe_intake.receive(user_prompt)
@@ -668,6 +716,10 @@ class LLmToAudio:
                 self._say(voice_agent_utils.RECIPE_RETRY)
                 return
             self._say(voice_agent_utils.RECIPE_COOKING)
+            # _say clears interrupt_event to speak; a mode switch during that
+            # line must still stop the recipe from being written.
+            if self.turn_cancelled.is_set():
+                return
             user_prompt = voice_agent_utils.RECIPE_REQUEST.format(payload)
             expect_recipe = True
 
@@ -675,6 +727,7 @@ class LLmToAudio:
             self.messages = [{'role': 'system', 'content': self.system_prompt}]
 
         self.messages.append({'role': 'user', 'content': user_prompt})
+        self._trim_history()
 
         # RAG: augment only the outgoing request with retrieved context; the
         # stored history keeps the plain question so context doesn't accumulate.
@@ -735,6 +788,10 @@ class LLmToAudio:
         if self.single_turn:
             extra_params = {"cache_prompt": False, "n_keep": 0}
 
+        # Cleared interrupt_event above is this turn's; a cancel is not.
+        if self.turn_cancelled.is_set():
+            return
+
         self.is_generating = True
         llm_response_stream = self.llm_client.chat.completions.create(
             model=voice_agent_utils.DEFAULT_LLM_SERVER_MODEL,
@@ -754,7 +811,7 @@ class LLmToAudio:
                 self.time_to_first_token = time.time() - self.time_llm_gen_started
                 self._info(f"\n>> Time to first token: {self.time_to_first_token:.2f} seconds")
 
-            if self.stop_event.is_set() or self.interrupt_event.is_set():
+            if self.stop_event.is_set() or self.interrupt_event.is_set() or self.turn_cancelled.is_set():
                 break
 
             if chunk.choices and chunk.choices[0].delta.content:
@@ -771,6 +828,15 @@ class LLmToAudio:
                     self._process_text_chunk(speak)
 
         self.is_generating = False
+
+        if self.turn_cancelled.is_set():
+            # A mode switch is waiting. Close the stream so llama-server stops
+            # generating, and leave everything else to the reset: nothing of
+            # this answer is spoken, kept in the history or drawn as a recipe.
+            close = getattr(llm_response_stream, 'close', None)
+            if close:
+                close()
+            return
 
         speak = router.flush()
         if speak:
@@ -923,6 +989,10 @@ class AudioToText:
         # Transcription thread
         self.stop_event = threading.Event()
         self.interrupt_event = threading.Event()  # For aborting current input
+        # Set when a mode switch is waiting: get_speech_input returns at once
+        # with nothing. get_speech_input clears interrupt_event when it
+        # starts, so that one cannot carry this; only the run loop clears it.
+        self.abort_event = threading.Event()
         self.force_end_segment_event = threading.Event()  # For forcing end of user speech
         self._stream_lock = threading.Lock()  # Prevents stream start during interrupt
         # Set when VAD detects end-of-utterance (or user force-ends a segment).
@@ -1117,8 +1187,8 @@ class AudioToText:
             self._info(f">>> START input audio stream active: {self.input_audio_stream.active}")
 
             while True:
-                # Check for stop signal
-                if self.stop_event.is_set():
+                # Check for stop signal, or a mode switch waiting in the run loop
+                if self.stop_event.is_set() or self.abort_event.is_set():
                     return ""
 
                 # Check for force end of segment (user pressed button while speaking)
@@ -1189,10 +1259,18 @@ class AudioToText:
 class VoiceAgent():
 
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, exit_phrase=voice_agent_utils.DEFAULT_EXIT_COMMAND):
         self.verbose = verbose
+        # Saying this (as whole words) ends run(); None or "" turns it off.
+        # The default keeps upstream's behaviour for its other front-ends;
+        # OutdoorGPT's CLI passes None unless --exit_phrase is given.
+        self.exit_phrase = exit_phrase
         # Lock to prevent concurrent language changes (causes segfault in TTS)
         self._language_change_lock = threading.Lock()
+        # A mode switch or restart asked for by the dial or the button, waiting
+        # for the run loop (see request_reset). Newest request wins.
+        self._pending_reset = None
+        self._pending_lock = threading.Lock()
 
     def _info(self, text):
         """Print info message."""
@@ -1255,6 +1333,99 @@ class VoiceAgent():
         self.output_handler.shutdown()
         self.input_handler.shutdown()
 
+    def request_reset(self, system_prompt=None, start_message=None, recipe_mode=None,
+                      rag_enabled=None, silence_seconds=None):
+        """Ask for a full reset with (optionally) a new prompt; any thread.
+
+        For the dial and the button. The reset itself is carried out by the
+        run loop, between turns, never alongside one: done from the callback's
+        own thread it raced the turn in progress, so the previous mode's
+        answer was spoken after the new start message, landed in the new
+        history and, on a switch into recipes, was drawn as the recipe. This
+        only marks the current turn as cancelled (no new sentence, generation
+        stops at the next token, listening at once) and returns at once, so a
+        GPIO callback is never held up; the newest request wins.
+        """
+        with self._pending_lock:
+            self._pending_reset = dict(system_prompt=system_prompt, start_message=start_message,
+                                       recipe_mode=recipe_mode, rag_enabled=rag_enabled,
+                                       silence_seconds=silence_seconds)
+        self.input_handler.abort_event.set()
+        self.output_handler.cancel_turn()
+
+    def _reset_pending(self):
+        with self._pending_lock:
+            return self._pending_reset is not None
+
+    def _take_pending_reset(self):
+        """Carry out a requested reset, if any. Run loop only."""
+        with self._pending_lock:
+            settings, self._pending_reset = self._pending_reset, None
+        if settings is None:
+            return False
+        self._do_full_reset(**settings)
+        return True
+
+    def _do_full_reset(self, system_prompt=None, start_message=None, recipe_mode=None,
+                       rag_enabled=None, silence_seconds=None):
+        """Reset to a (new) prompt and speak its start message. Run loop only.
+
+        Runs on the thread that also runs the turns, so no turn can be in
+        progress; the stream lock is not needed and not taken, which leaves
+        the button free to interrupt the start message.
+        """
+        self._info("Full reset")
+        oh, ih = self.output_handler, self.input_handler
+
+        # Stop the cancelled turn's speech here, on this thread: interrupt()
+        # waits for a sentence still being written, then stops the stream.
+        # The speech worker then sees the interrupt and ends, so its last
+        # sentence cannot follow the new start message, and it is gone
+        # before start() below replaces the queue it works from.
+        oh.interrupt_event.set()
+        if oh.is_speaking or oh.is_processing:
+            oh.interrupt()
+        deadline = time.time() + 10.0
+        while oh.is_processing and time.time() < deadline:
+            time.sleep(0.05)
+
+        # The panel is deliberately not touched: it is bistable, so the last
+        # recipe stays readable after turning the dial away from recipes. The
+        # button is different: the CLI draws the instruction card on every
+        # press before it asks for a reset.
+        if recipe_mode is not None:
+            oh.recipe_mode = recipe_mode
+        if rag_enabled is not None:
+            oh.rag_enabled = rag_enabled
+        # How long to wait after the caller stops talking. Read by the
+        # listening loop on every check, so it can change with the mode.
+        if silence_seconds is not None:
+            ih.end_of_utterance_duration = silence_seconds
+        if system_prompt is not None:
+            oh.system_prompt = system_prompt
+        if start_message is not None:
+            oh.start_message = start_message
+
+        ih.interrupt()           # drop whatever was half heard
+        self.mute_microphone()   # get_speech_input opens it again afterwards
+        oh.start()               # fresh history, recipe state and buffers
+
+        # Cleared here and nowhere else, so a cancelled turn can never resume.
+        # A newer request arriving from now on sets them again, which cuts the
+        # start message below short; the loop then carries that one out.
+        oh.turn_cancelled.clear()
+        ih.abort_event.clear()
+        oh.interrupt_event.clear()
+
+        msg = oh.start_message
+        oh._start_audio_stream()
+        oh.assistant_printer.start()
+        oh.assistant_printer.print("[RESET]", partial=False)
+        oh.assistant_printer.print(msg, partial=False)
+        oh._speak_sentence(msg, wait_for_completion=True)
+        oh._finish_processing()
+        ih.interrupt_event.clear()
+
     def run(self):
 
         # start the output handler and open with start message
@@ -1277,6 +1448,12 @@ class VoiceAgent():
             if self.stop_event_set():
                 break
 
+            # A mode switch or restart from the dial or the button is carried
+            # out here, between turns (see request_reset).
+            if self._take_pending_reset():
+                idle_notified = False
+                continue
+
             # Recipe mode is one-shot: after a recipe has been delivered we stop
             # listening and stop generating, so the spoken answer and the e-ink
             # panel stay as they are while you cook. The interrupt button clears
@@ -1298,11 +1475,15 @@ class VoiceAgent():
             # (EOU -> first audio played).
             self.output_handler.last_eou_timestamp = self.input_handler.last_eou_timestamp
 
+            # Heard while a switch was asked for: it belongs to the old mode.
+            if self._reset_pending():
+                continue
+
             if not user_input_transcribed:
                 self.debug_state("empty_input_continuing")
                 continue
 
-            if voice_agent_utils.DEFAULT_EXIT_COMMAND.lower() in user_input_transcribed.lower():
+            if voice_agent_utils.said_exit_phrase(user_input_transcribed, self.exit_phrase):
                 self.output_handler.assistant_printer.print(voice_agent_utils.DEFAULT_GOODBYE_MESSAGE, partial=False)
                 self.output_handler._speak_sentence(voice_agent_utils.DEFAULT_GOODBYE_MESSAGE, wait_for_completion=True)
                 break
@@ -1313,10 +1494,40 @@ class VoiceAgent():
                 # Mute mic while agent is speaking to prevent echo/feedback
                 self.mute_microphone()
                 self.debug_state("before_process_prompt")
-                self.output_handler.process_prompt(user_input_transcribed)
+                try:
+                    self.output_handler.process_prompt(user_input_transcribed)
+                except Exception as e:
+                    self._recover_from_failed_turn(e)
                 self.debug_state("after_process_prompt")
                 # Note: Don't unmute here - get_speech_input() handles it via stream_lock
                 # This ensures we wait for interrupt callback's audio drain before starting mic    
+
+    def _recover_from_failed_turn(self, error):
+        """A turn raised: say so, and go on if the model server is still there.
+
+        One refused or dropped request used to end the agent, and with it
+        the phone. Now the unanswered question is dropped from the history
+        (so it stays question/answer), the phone apologises, and the next
+        question is a fresh turn. If the chat server itself is gone there is
+        nothing to gain by staying up: the error is raised again, the agent
+        exits, and the boot script restarts the servers and the agent.
+        """
+        print(f"[VoiceAgent] Turn failed: {type(error).__name__}: {error}")
+        oh = self.output_handler
+        oh.is_generating = False
+        if len(oh.messages) > 1 and oh.messages[-1]['role'] == 'user':
+            oh.messages.pop()
+        if oh.is_speaking or oh.is_processing:
+            oh.interrupt()
+        try:
+            server_up = oh.llm_client.health()
+        except Exception:
+            server_up = False
+        if not server_up:
+            print("[VoiceAgent] Chat server unreachable; exiting so the boot script restarts everything")
+            oh._say(voice_agent_utils.TURN_FAILED_RESTART_MESSAGE)
+            raise error
+        oh._say(voice_agent_utils.TURN_FAILED_MESSAGE)
 
     def trigger_stop_events(self):
         self.input_handler.stop_event.set()
@@ -1338,12 +1549,36 @@ class VoiceAgent():
         """Check if the microphone is currently muted"""
         return self.input_handler.is_muted()
 
+    def configure_prompt(self, system_prompt=None, start_message=None, recipe_mode=None,
+                         rag_enabled=None, silence_seconds=None):
+        """Set the prompt and its per-mode settings without saying anything.
+
+        Only for use before run(): run() opens with this start message and
+        starts the history from this system prompt (output_handler.start()).
+        """
+        oh = self.output_handler
+        if system_prompt is not None:
+            oh.system_prompt = system_prompt
+        if start_message is not None:
+            oh.start_message = start_message
+        if recipe_mode is not None:
+            oh.recipe_mode = recipe_mode
+        if rag_enabled is not None:
+            oh.rag_enabled = rag_enabled
+        if silence_seconds is not None:
+            self.input_handler.end_of_utterance_duration = silence_seconds
+
     def full_reset(self):
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
 
     def full_reset_with_prompt(self, system_prompt=None, start_message=None, recipe_mode=None, rag_enabled=None, silence_seconds=None):
-        """Full reset with optional new system prompt and start message."""
+        """Full reset with optional new system prompt and start message.
+
+        Runs in the caller's thread, alongside whatever turn is in progress.
+        Kept for other callers; the dial and the button go through
+        request_reset(), which leaves the reset to the run loop.
+        """
         self._info("Full reset requested")
 
         # Switch recipe mode with the prompt. The panel is deliberately not

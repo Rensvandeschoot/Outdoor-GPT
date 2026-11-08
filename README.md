@@ -211,6 +211,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
 | `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
 | `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
+| `RESTART_DELAY` | `3` | Seconds before the boot script starts the agent again after it stopped. Doubles on every stop in a row, up to a minute; see [Step 6](#step-6--off-grid-start-everything-at-boot) |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
 | `GOVERNOR` | `ondemand` | CPU governor applied by the boot script in mode 3. `ondemand` clocks down while the phone waits, which matters on crank power: a Pi 5 held at maximum clock spends its headroom on idling instead of on the audio stage. Use `performance` for the fastest replies on mains power |
 | `CPU_MAX_KHZ` | `1500000` | Clock ceiling for mode 3. The first sentence the phone speaks is the heaviest moment of the whole start-up; at 1.5 GHz its dip on the 5 V input is less than half of what it is at 2.4 GHz. Costs about two seconds at start-up. Steps of 100000 up to 2400000; empty keeps the kernel's maximum. See [Crank power](#crank-power) |
@@ -218,6 +219,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `TTS_WARMUP` | `1` | Synthesise a few throwaway lines during start-up, after both servers are up, so the first real sentence does not also carry onnxruntime's one-off setup cost |
 | `ASR_THREADS` | `2` | Same cap for Moonshine, the speech recogniser, which otherwise makes every utterance you speak a four-core spike. `0` keeps the default |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
+| `HISTORY_TURNS` | `8` | How many of the latest turns (question and answer) the model sees. Older ones are dropped (the agent also caps the history at 6000 characters), so a long conversation never outgrows `CHAT_CONTEXT`: without a limit the server refused the request after some 35 questions. `0` = no turn limit |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
 `config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. 
@@ -295,6 +297,10 @@ journalctl -u dietpi-autostart_custom.service -b --no-pager | tail -20
 ```
 
 Startup order takes care of itself: both servers start in the background and the agent waits for each of them (the LLM client and the RAG retriever each retry for ~30 seconds), so a slow boot is fine. Nothing else on the Pi needs changing — no extra packages, no systemd units, and the embedding server is just a second llama.cpp process.
+
+**The dial can be turned while the phone starts.** The prompt is picked from the dial right after the GPIO setup, but turns are only heard some 20 seconds later, once the models are loaded; so at that point the agent reads the dial again and opens in the mode it shows then. Turning it while the phone talks or thinks is fine too: the sentence being spoken is finished, the answer being thought of is dropped (at the latest when the model sends its next word), and the new mode starts with its own opening line. Switches from the dial and the button are carried out by the agent's own loop, between turns, never alongside one.
+
+**Whatever stops is started again.** Mode 3 runs the agent in a loop: when it exits — a crash, a server it could not reach in time, a turn that failed beyond repair — the script restarts any server whose process has gone and then the agent, after `RESTART_DELAY` seconds (doubling on every stop in a row, up to a minute). DietPi's autostart unit has `RemainAfterExit=yes` and no `Restart=`, so without this loop any exit left the phone silent until the power was cycled. `systemctl restart dietpi-autostart_custom.service` (or `stop`) and Ctrl-C still end it cleanly, servers included; note that `systemctl start` does nothing while the unit is "active", use `restart`. Each restart is a line in the journal (`OutdoorGPT stopped (exit code …)`), and the server logs in `/var/log` keep every run of the current boot. `tests/startup_sim/test_boot_script.sh` checks the loop on a PC.
 
 One thing to expect off-grid: the Pi has no sleep mode, so a voltage dip means a full cold boot before the phone answers again.
 
@@ -459,6 +465,7 @@ Symptoms we have actually hit, and what they mean:
 | Servers refuse to start only at boot, fine from a shell | `LLAMA_SERVER` not set to an absolute path; the boot service has a minimal `PATH` | Set the absolute path in `config.sh` |
 | Phone answers, but never uses the documents | `MODE` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` and reboot |
 | Agent exits at startup complaining it cannot reach a server | A model file named in `config.sh` does not exist, so that server died immediately | Check the two `*.log` files in `/var/log/` |
+| The phone goes quiet, then starts over with its opening line | The agent stopped and the boot script restarted it | `journalctl -u dietpi-autostart_custom.service -b \| grep -B20 "OutdoorGPT stopped"` shows the error just before the restart |
 | The autostart script never runs at all | `/boot/dietpi/.dietpi-autostart_index` is not `14` | Set it with `dietpi-autostart` |
 | `chunks.json` has a different checksum on the Pi than on the PC | Harmless: git normalises line endings, so the Windows copy has CRLF and the Pi has LF. The difference in bytes equals the number of lines | Compare `embeddings.npy` instead — that one is binary and must match exactly |
 

@@ -35,7 +35,8 @@ fi
 
 # start server
 # note: settings mostly optimized for Raspberry Pi 5
-nice -n 10 \
+# exec: the boot script tracks this PID to restart a server that has died.
+exec nice -n 10 \
   "$LLAMA_SERVER" -m "$MODEL" \
   --cache-type-k f16 --cache-type-v f16 \
   -c $CONTEXT \
