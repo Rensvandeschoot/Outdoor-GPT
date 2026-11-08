@@ -317,7 +317,7 @@ Measured on this Pi, roughly 32 seconds from power to picking up the handset:
 | RAG index load | 1.5 s | 8082 chunks; cheap enough to leave alone |
 | Piper TTS | 2.7 s | |
 | Waiting for the chat server | 3.0 s | |
-| LLM warmup | 4.0 s | makes the first answer fast |
+| LLM warmup | 4.0 s | makes the first answer fast; since then reduced to one token (`max_tokens=1`), which keeps that effect and should take about a second (not yet measured) |
 
 The chat model itself takes ~21 s to load from the SD card, but that happens in parallel with the agent's own startup, so it is not on the critical path — faster storage would not currently help.
 

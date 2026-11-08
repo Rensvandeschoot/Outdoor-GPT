@@ -181,12 +181,16 @@ class LLmToAudio:
         ]
         self.show_llm_model_info()
 
-        # Warm up LLM
+        # Warm up LLM. One token is enough: the first pass through the model is
+        # what pages its weights in from the SD card and makes the first real
+        # answer fast. Generating a whole reply to "hi" on top of that cost a
+        # few seconds of every start (and of crank power) for nothing.
         t1 = time.time()
         _ = self.llm_client.chat.completions.create(
             model="mymodel",  # This can be any string
             messages=[{"role": "user", "content": "hi"}],
-            stream=False
+            stream=False,
+            max_tokens=1,
         )
         print(f"LLM warmed up in {time.time()-t1:.2f} secs.")
 
