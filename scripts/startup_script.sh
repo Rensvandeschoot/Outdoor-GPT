@@ -59,6 +59,13 @@ if [ "$MODE" = "3" ] && [ -n "$CPU_MAX_KHZ" ]; then
     echo "CPU clock ceiling: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null || echo unknown) kHz (requested $CPU_MAX_KHZ)"
 fi
 
+# The start-up LEDs (outdoorgpt-leds-early.service, installed by
+# install_on_pi.sh) have been breathing since early in the boot, so that a dip
+# in the 5 V on crank power does not leave the LEDs in random colours until
+# the agent drives them. Stop them now, just before the agent takes over; they
+# leave their last colour up, so there is no dark blink in between.
+systemctl stop outdoorgpt-leds-early.service 2>/dev/null
+
 case $MODE in
     1)
         echo "Starting llama-server (agent)..."

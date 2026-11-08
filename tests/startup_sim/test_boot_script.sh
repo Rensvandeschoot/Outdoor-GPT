@@ -46,6 +46,9 @@ EOF
   ( . "$A/config.sh"; mkdir -p "$(dirname "$A/$CHAT_MODEL")" "$(dirname "$A/$EMBED_MODEL")"
     touch "$A/$CHAT_MODEL" "$A/$EMBED_MODEL" )
   echo "export PATH=\"$A/venv/bin:\$PATH\"" > "$A/venv/bin/activate"
+  # Fake systemctl: only logs what it was asked, next to the agent's lines.
+  printf '#!/bin/bash\necho "$(date +%%s.%%N) systemctl $*" >> agent.log\n' > "$A/venv/bin/systemctl"
+  chmod +x "$A/venv/bin/systemctl"
 
   cat > "$A/venv/bin/python" <<'EOF'
 #!/bin/bash
@@ -118,6 +121,11 @@ fi
   || { fail "servers started more than once:"; cat "$A/servers.log"; }
 grep -q "OutdoorGPT stopped (exit code 1" "$A/script.out" && ok "each stop is logged with its exit code" \
   || fail "no 'OutdoorGPT stopped' line in the output"
+first=$(grep -m1 -n " start 1 \| systemctl stop outdoorgpt-leds-early" "$A/agent.log" | cut -d: -f2-)
+case "$first" in
+  *"systemctl stop outdoorgpt-leds-early.service"*) ok "the start-up LED service is stopped before the agent starts" ;;
+  *) fail "start-up LED service not stopped first: $first" ;;
+esac
 grep -q -- "--llm_server_url http://localhost:8080/v1 --embedding_server_url http://localhost:8081/v1" "$A/args.log" \
   && ok "the agent gets the server addresses from CHAT_PORT / EMBED_PORT" || { fail "server addresses:"; cat "$A/args.log"; }
 

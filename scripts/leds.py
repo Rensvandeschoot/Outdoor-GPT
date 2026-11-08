@@ -112,6 +112,7 @@ class StatusLeds:
         self._hold = None           # (seconds held, reset after, restart after)
         self._ack_until = 0.0       # brighter breath until then: a press was seen
         self._override = None       # a frame that stays, whatever the state
+        self._off_at_stop = True    # stop() turns the LEDs off (see stop)
 
     # -- plumbing ---------------------------------------------------------
     def _log(self, msg):
@@ -230,7 +231,8 @@ class StatusLeds:
             rgb, brightness = self._frame(time.time())
             self._write(rgb, brightness)
             self._stop.wait(POLL_INTERVAL)
-        self._write(COLOURS['off'], 0)
+        if self._off_at_stop:
+            self._write(COLOURS['off'], 0)
 
     # -- lifecycle --------------------------------------------------------
     def start(self):
@@ -241,7 +243,10 @@ class StatusLeds:
         self._log("status LEDs active")
         return True
 
-    def stop(self):
+    def stop(self, off=True):
+        """Stop the thread; off=False leaves the last colour up (handing the
+        LEDs over to the agent without a dark blink in between)."""
+        self._off_at_stop = off
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=1.0)
@@ -252,20 +257,53 @@ class StatusLeds:
                 pass
 
 
+BOOTING_MAX = 180.0     # --booting gives up after this long (no agent came)
+BOOTING_OPEN_WAIT = 30.0  # ... and waits this long for the SPI device to appear
+
+
 if __name__ == "__main__":
-    # python leds.py --error : blink red calmly until stopped. The boot script
-    # runs this while it waits to start the agent again after an error, when
-    # no agent is there to drive the LEDs.
+    # Run on their own, until stopped, when no agent drives the LEDs:
+    #
+    #   python leds.py --error    blink red calmly. The boot script runs this
+    #                             while it waits to start the agent again
+    #                             after an error.
+    #   python leds.py --booting  the turquoise start-up breath, from early in
+    #                             the boot (outdoorgpt-leds-early.service)
+    #                             until the boot script stops it just before
+    #                             the agent takes the LEDs over. Before any
+    #                             software writes them, a dip in the 5 V on
+    #                             crank power leaves the LEDs showing random
+    #                             colours; this shortens that stretch from the
+    #                             whole boot to the first seconds.
     import argparse
     import signal
-    ap = argparse.ArgumentParser(description="Blink the status LEDs red until stopped.")
-    ap.add_argument("--error", action="store_true", required=True)
-    ap.parse_args()
+    ap = argparse.ArgumentParser(description="Drive the status LEDs on their own until stopped.")
+    what = ap.add_mutually_exclusive_group(required=True)
+    what.add_argument("--error", action="store_true", help="blink red calmly")
+    what.add_argument("--booting", action="store_true", help="the turquoise start-up breath")
+    args = ap.parse_args()
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())
     signal.signal(signal.SIGINT, lambda *_: done.set())
-    leds = StatusLeds(boot='failing')
-    if leds.start():
-        while not done.is_set():
+    if args.error:
+        leds = StatusLeds(boot='failing')
+        if leds.start():
+            while not done.is_set():
+                time.sleep(0.1)
+            leds.stop()
+    else:
+        leds = StatusLeds()
+        # Early in the boot the SPI device may not exist yet: udev creates it
+        # once the driver has loaded. Keep trying for a while.
+        give_up = time.time() + BOOTING_OPEN_WAIT
+        while not leds.start():
+            if done.is_set() or time.time() > give_up:
+                raise SystemExit(0)
+            time.sleep(0.5)
+        print("start-up LEDs: breathing until the agent takes over")
+        end = time.time() + BOOTING_MAX
+        while not done.is_set() and time.time() < end:
             time.sleep(0.1)
-        leds.stop()
+        # Stopped by the boot script: leave the colour up for the agent.
+        # Timed out (no agent ever came): turn them off.
+        leds.stop(off=not done.is_set())
