@@ -206,7 +206,16 @@ wait_for 40 '[ "$(count " start 4" "$A/agent.log")" = 1 ]' || fail "no fourth ru
   || fail "counted: $(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")"
 kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
 
-echo "7. A second copy of the script is refused while the first runs"
+echo "7. A config.sh without MODE still starts OutdoorGPT (mode 3)"
+setup nomode
+sed -i '/^MODE=/d' "$A/config.sh"
+printf '60 0\n' > "$A/plan"
+start_script
+wait_for 15 '[ -f "$A/agent.pid" ]' && grep -q -- "--rag_index" "$A/args.log" \
+  && ok "mode 3 started: the agent runs with --rag_index" || fail "no mode-3 agent without MODE in config.sh"
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid" 2>/dev/null)" 2>/dev/null
+
+echo "8. A second copy of the script is refused while the first runs"
 if command -v flock >/dev/null 2>&1; then
   setup second
   printf '60 0\n' > "$A/plan"

@@ -6,7 +6,7 @@
 # This is the CrankGPT DIY startup script
 # (https://github.com/squeezlabs/crankgpt_diy/blob/main/dietpi/startup_script.sh)
 # with a third mode added: OutdoorGPT, i.e. the voice agent plus RAG over the
-# document collection. Set MODE below and reboot.
+# document collection. Set MODE in config.sh and reboot.
 #
 # IMPORTANT: the "#!" above must stay on the very first line. A blank line in
 # front of it makes systemd fail with "Exec format error" and nothing starts.
@@ -24,8 +24,10 @@ cd "$AGENT_DIR" || exit 1
 [ -f ./config.sh ] && . ./config.sh
 source "${VENV:-venv}/bin/activate" || exit 1
 
-# Mode: 1 = Voice Agent, 2 = Translation, 3 = OutdoorGPT (agent + RAG)
-MODE=3
+# 1 = Voice Agent, 2 = Translation, 3 = OutdoorGPT (agent + RAG). Set in
+# config.sh; without it (no config.sh, or one from before MODE moved there)
+# the phone starts as OutdoorGPT, as it always has.
+MODE=${MODE:-3}
 
 # Platform: rpi5 or opi5
 PLATFORM=${PLATFORM:-rpi5}

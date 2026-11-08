@@ -269,7 +269,7 @@ Inside the phone there are no terminals: everything must start by itself when th
 | 2 | Translation agent (unchanged) |
 | **3** | **OutdoorGPT: chat LLM (context 4096) + embedding server + agent with `--rag_index`** |
 
-Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, both servers logging to `logs/boot/`) plus the RAG flags on the agent. What it changes is the CPU: modes 1 and 2 keep CrankGPT's `performance` governor, while mode 3 applies `GOVERNOR` and `CPU_MAX_KHZ` from `config.sh` so the phone neither idles at full clock nor spikes to it, passes the `TTS_*` settings through to the agent, and runs it with `python -u` so journal timestamps are real. The measurements behind those defaults are under [Crank power](#crank-power). Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
+Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, both servers logging to `logs/boot/`) plus the RAG flags on the agent. What it changes is the CPU: modes 1 and 2 keep CrankGPT's `performance` governor, while mode 3 applies `GOVERNOR` and `CPU_MAX_KHZ` from `config.sh` so the phone neither idles at full clock nor spikes to it, passes the `TTS_*` settings through to the agent, and runs it with `python -u` so journal timestamps are real. The measurements behind those defaults are under [Crank power](#crank-power). Switching modes is editing `MODE` in `config.sh` and rebooting (without that line the script starts mode 3), so you can always fall back to the stock phone.
 
 DietPi must be set to run the custom script in the first place. Check with:
 
@@ -480,7 +480,7 @@ Symptoms we have actually hit, and what they mean:
 | ------- | ----- | --- |
 | Nothing starts at boot, but running the script's lines by hand works | The shebang is not on line 1 of `custom.sh` (`journalctl` shows `Exec format error`) | Copy `startup_script.sh` over it instead of hand-editing |
 | Servers refuse to start only at boot, fine from a shell | `LLAMA_SERVER` not set to an absolute path; the boot service has a minimal `PATH` | Set the absolute path in `config.sh` |
-| Phone answers, but never uses the documents | `MODE` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` and reboot |
+| Phone answers, but never uses the documents | `MODE` in `config.sh` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` in `config.sh` and reboot |
 | Agent exits at startup complaining it cannot reach a server | A model file named in `config.sh` does not exist, so that server died immediately | Check the server logs of that boot in `logs/boot/` (`boot_<n>_llama-server.log`, `boot_<n>_embedding-server.log`) |
 | The phone goes quiet, then starts over with its opening line | The agent stopped and the boot script restarted it | `journalctl -u dietpi-autostart_custom.service -b \| grep -B20 "OutdoorGPT stopped"` shows the error just before the restart |
 | The autostart script never runs at all | `/boot/dietpi/.dietpi-autostart_index` is not `14` | Set it with `dietpi-autostart` |
