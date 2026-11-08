@@ -127,7 +127,7 @@ fi
 
 # -------------------------------------------------------------- boot script
 echo
-echo "[4/6] Installing the boot script"
+echo "[4/6] Installing the boot script and the start-up LEDs"
 if [ -f "$CUSTOM" ] && cmp -s "$AGENT_DIR/startup_script.sh" "$CUSTOM"; then
   ok "custom.sh already up to date"
 elif [ -f "$CUSTOM" ]; then
@@ -138,6 +138,23 @@ install -m 755 "$AGENT_DIR/startup_script.sh" "$CUSTOM" || die "could not instal
 head -c 11 "$CUSTOM" | grep -q '^#!/bin/bash' \
   && ok "shebang is on the first line" \
   || die "shebang check failed on $CUSTOM - systemd would refuse to run it"
+
+# The start-up LEDs: a small service that breathes turquoise from early in
+# the boot until the boot script hands the LEDs to the agent (see the unit).
+UNIT=/etc/systemd/system/outdoorgpt-leds-early.service
+sed "s#@AGENT_DIR@#$AGENT_DIR#g" "$REPO/scripts/outdoorgpt-leds-early.service" > "$UNIT.new" \
+  || die "could not write $UNIT"
+if [ -f "$UNIT" ] && cmp -s "$UNIT.new" "$UNIT"; then
+  rm -f "$UNIT.new"
+  ok "start-up LED service already up to date"
+else
+  mv "$UNIT.new" "$UNIT"
+  systemctl daemon-reload
+  ok "start-up LED service installed ($UNIT)"
+fi
+systemctl enable outdoorgpt-leds-early.service >/dev/null 2>&1 \
+  && ok "start-up LED service enabled" \
+  || warn "could not enable outdoorgpt-leds-early.service (systemctl enable outdoorgpt-leds-early.service)"
 
 IDX=$(cat /boot/dietpi/.dietpi-autostart_index 2>/dev/null || echo "")
 if [ "$IDX" = "14" ]; then

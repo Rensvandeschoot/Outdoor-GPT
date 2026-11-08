@@ -1,0 +1,27 @@
+# The status LEDs while the phone boots, before the agent can drive them.
+#
+# On crank power the 5 V dips while the Pi boots, and the APA102 LEDs on the
+# audio HAT pick up random colours from every dip; nothing corrects them until
+# software writes them. This starts the turquoise start-up breath early in the
+# boot (leds.py --booting); startup_script.sh stops it just before the agent
+# takes the LEDs over. It gives up by itself after three minutes.
+#
+# Installed and enabled by install_on_pi.sh, which fills in @AGENT_DIR@.
+# Disable with: systemctl disable --now outdoorgpt-leds-early.service
+
+[Unit]
+Description=OutdoorGPT status LEDs while the phone boots
+DefaultDependencies=no
+After=local-fs.target
+Conflicts=shutdown.target
+Before=shutdown.target
+ConditionPathExists=@AGENT_DIR@/leds.py
+
+[Service]
+Type=simple
+WorkingDirectory=@AGENT_DIR@
+ExecStart=@AGENT_DIR@/venv/bin/python -u @AGENT_DIR@/leds.py --booting
+TimeoutStopSec=3
+
+[Install]
+WantedBy=sysinit.target
