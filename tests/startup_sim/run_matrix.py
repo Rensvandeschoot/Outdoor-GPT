@@ -35,6 +35,7 @@ LEGEND = {
     'DIAL_EVENT_LOST': 'info: a dial edge came before its callback existed (harmless if the mode still matches)',
     'BUTTON_LOST_AT_BOOT': 'info: a button press came before its callback existed',
     'RANDOM_PROMPT': 'no dial position could be read, so a random mode was chosen',
+    'BOOT_LEDS_DARK': 'the LEDs stayed dark for more than 1.5 s of the start-up (not counting the kernel)',
     'NO_DIAL_POSITION': 'info: no dial position could be read at start-up; the phone started in position 1',
     'STALE_SPEECH': 'an answer from the previous mode was spoken after a switch',
     'CONTEXT_POLLUTED': 'a request to the model had a broken history (wrong roles or another mode\'s answer)',

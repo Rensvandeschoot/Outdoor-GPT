@@ -1,18 +1,24 @@
 """Status light on the three APA102 LEDs of the ReSpeaker 2-Mic HAT.
 
 The thinking pause on a small model is long enough that silence reads as a
-fault; the LEDs show what is actually happening. Colours:
+fault; the LEDs show what is actually happening. Colours (device_settings.py):
 
-    listening  green           (your turn: the mic is open)
-    thinking   blue, pulsing   (the model is generating)
-    speaking   orange          (the phone is talking, so wait)
-    done       purple          (recipe delivered; press the button for a new one)
+    starting   turquoise, slow breath  (the phone is starting up)
+    listening  green                   (your turn: the mic is open)
+    thinking   blue, pulsing           (the model is generating)
+    speaking   orange                  (the phone is talking, so wait)
+    done       purple                  (recipe delivered; press the button for a new one)
+
+They come on as soon as the agent's process starts, before the models load:
+without an output handler StatusLeds shows 'starting'. attach() hands it the
+agent once that is ready, and from then on it mirrors the agent's state.
 
 Everything here is fail-safe. No spidev, no HAT, wrong bus: the class turns
 into a no-op and the agent runs exactly as it would without it.
 
 The LEDs share SPI0 with the e-ink panel, so every write takes spi_bus.LOCK.
-While a recipe is being drawn the animation simply pauses.
+While a picture is being drawn the animation simply pauses; at start-up that
+is the instruction card, a few seconds of a breath held still.
 """
 
 import math
@@ -31,6 +37,7 @@ COLOURS = device_settings.LED_COLOURS
 
 POLL_INTERVAL = 0.05    # how often we look at the agent's state
 PULSE_PERIOD = 1.6      # seconds for one full breath while thinking
+BOOT_PERIOD = 4.0       # seconds for one breath while starting: slower, calmer
 
 
 def apa102_frame(colours, brightness):
@@ -46,10 +53,22 @@ def apa102_frame(colours, brightness):
     return data
 
 
+def breath(t, period):
+    """0 -> 1 -> 0 over one period: a sine breath rather than a blink. Less
+    alarming, and it reads as "working" instead of "error"."""
+    phase = (t % period) / period
+    return 0.5 - 0.5 * math.cos(2 * math.pi * phase)
+
+
+def level(wave):
+    """Brightness for a breath value 0..1, never fully dark."""
+    return 1 + int(wave * (MAX_BRIGHTNESS - 1))
+
+
 class StatusLeds:
     """Mirrors the agent's state onto the HAT LEDs from a background thread."""
 
-    def __init__(self, output_handler, verbose=False):
+    def __init__(self, output_handler=None, verbose=False):
         self._handler = output_handler
         self._verbose = verbose
         self._spi = None
@@ -95,8 +114,14 @@ class StatusLeds:
             self._spi = None
 
     # -- state ------------------------------------------------------------
+    def attach(self, output_handler):
+        """The agent is ready: from now on mirror its state, not 'starting'."""
+        self._handler = output_handler
+
     def _state(self):
         h = self._handler
+        if h is None:
+            return 'starting'
         # Priority order. Speech first: the closing line after a recipe is still
         # speech, so it stays orange and only turns purple once the phone is
         # quiet. is_processing counts as speech rather than thinking, because it
@@ -112,18 +137,19 @@ class StatusLeds:
             return 'thinking'
         return 'listening'
 
+    def _frame(self, now):
+        """(rgb, brightness) to show at time now."""
+        state = self._state()
+        if state == 'starting':
+            return COLOURS['starting'], level(breath(now, BOOT_PERIOD))
+        if state == 'thinking':
+            return COLOURS['thinking'], level(breath(now, PULSE_PERIOD))
+        return COLOURS[state], MAX_BRIGHTNESS
+
     def _run(self):
         while not self._stop.is_set():
-            state = self._state()
-            if state == 'thinking':
-                # A sine breath rather than a blink: less alarming, and it
-                # reads as "working" instead of "error".
-                phase = (time.time() % PULSE_PERIOD) / PULSE_PERIOD
-                wave = 0.5 - 0.5 * math.cos(2 * math.pi * phase)
-                level = 1 + int(wave * (MAX_BRIGHTNESS - 1))
-                self._write(COLOURS['thinking'], level)
-            else:
-                self._write(COLOURS[state], MAX_BRIGHTNESS if state != 'off' else 0)
+            rgb, brightness = self._frame(time.time())
+            self._write(rgb, brightness)
             self._stop.wait(POLL_INTERVAL)
         self._write(COLOURS['off'], 0)
 

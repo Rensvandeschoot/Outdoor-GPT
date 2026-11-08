@@ -34,9 +34,11 @@ import time
 start_time = time.time()
 print("Loading Voice Agent...")
 
-from voice_agent import VoiceAgent
+# Light imports only up here. The heavy ones (numpy, onnxruntime, the speech
+# libraries: ~8 s on the Pi) come inside main(), after the status LEDs and
+# the GPIO are up, so the phone shows it is starting from its first second
+# instead of staying dark for half a minute.
 import voice_agent_utils
-from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper, create_conversation_log_file
 from opi.gpio_utils import POSITION_KEYS
 
 # Rotary dial: 3 positions mapped to the first 3 prompts in prompts.json.
@@ -46,8 +48,6 @@ ROTARY_POSITION_TO_PROMPT_INDEX = {
     'pos3': 2,
 }
 ROTARY_SETTLE_DELAY = 0.5
-
-print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
 
 
 def hold_single_instance_lock():
@@ -79,14 +79,14 @@ def main():
     args = parser.parse_args()
     instance_lock = hold_single_instance_lock()  # noqa: F841 - held until exit
 
-    voice_agent_utils.apply_audio_device_settings(args)
-
-    # Setup prompt selector (either from file or CLI args)
-    prompt_selector = voice_agent_utils.PromptSelector(
-        prompt_file=args.prompt_file,
-        default_system_prompt=args.system_prompt,
-        default_start_message=args.start_message
-    )
+    # Status LEDs first: a slow turquoise breath from the first second until
+    # the agent is ready (attach() below). Fail-safe: no HAT, no spidev, no
+    # LEDs and the agent is unaffected.
+    from leds import StatusLeds
+    status_leds = StatusLeds(verbose=args.verbose)
+    if status_leds.start():
+        print(">> Status LEDs active (turquoise breath=starting, green=your turn, "
+              "blue=thinking, orange=speaking, purple=done)")
 
     # Setup GPIO handler early so we can read the rotary dial for the initial prompt
     gpio_handler = None
@@ -107,6 +107,20 @@ def main():
     from eink_display import EinkRecipeDisplay
     eink = EinkRecipeDisplay(verbose=args.verbose)
     eink.render_image_async()
+
+    # Now the heavy imports, with the LEDs breathing and the card going up.
+    from voice_agent import VoiceAgent
+    from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper, create_conversation_log_file
+    print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
+
+    voice_agent_utils.apply_audio_device_settings(args)
+
+    # Setup prompt selector (either from file or CLI args)
+    prompt_selector = voice_agent_utils.PromptSelector(
+        prompt_file=args.prompt_file,
+        default_system_prompt=args.system_prompt,
+        default_start_message=args.start_message
+    )
 
     # Pick initial prompt: from the rotary dial; without GPIO (a PC), random
     initial_prompt = None
@@ -205,13 +219,10 @@ def main():
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
-    # Status LEDs on the audio HAT. Fail-safe: no HAT, no spidev, no LEDs and
-    # the agent is unaffected. Reads the handler's own state, so there is
-    # nothing to keep in sync at the call sites.
-    from leds import StatusLeds
-    status_leds = StatusLeds(va.output_handler, verbose=args.verbose)
-    if status_leds.start():
-        print(">> Status LEDs active (green=your turn, blue=thinking, orange=speaking, purple=done)")
+    # The LEDs stop breathing 'starting' and mirror the agent from here on.
+    # They read the handler's own state, so there is nothing to keep in sync
+    # at the call sites.
+    status_leds.attach(va.output_handler)
 
     va.start()
     print(f">> Took {time.time()-t1:.2f} secs to initialize Voice Agent <<")

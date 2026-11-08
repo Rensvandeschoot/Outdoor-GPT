@@ -397,12 +397,15 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 
 | Colour | Meaning |
 | ------ | ------- |
+| Turquoise, slow breath | Starting up: from the first second of the agent's process until it is ready (~30 s) |
 | Green | Your turn — the mic is open and it is listening |
 | Blue, pulsing | The model is generating |
 | Orange | The phone is talking, so wait |
 | Purple | Recipe delivered; press the button for a new session |
 
 Green and orange are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
+
+The lights come on before the models load: the CLI starts them, and the GPIO, ahead of its heavy imports, so the phone breathes turquoise from about half a second into the start-up instead of staying dark until it can talk. Only the kernel's first seconds stay dark. While the instruction card is being drawn the breath holds still for a few seconds: the panel and the LEDs share the SPI bus.
 
 The blue window is driven by `is_generating`, a flag added for this. The handler's existing `is_processing` looks like the obvious signal but is not: it only turns on once a sentence is ready to be spoken, so the thinking pause falls entirely outside it and the light would sit on green while the model was already working. `is_processing` is instead read as speaking, because it stays up between sentences while `is_speaking` briefly drops, and reading it as thinking would flick the light blue mid-answer.
 

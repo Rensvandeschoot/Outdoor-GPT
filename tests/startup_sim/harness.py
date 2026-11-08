@@ -10,6 +10,8 @@ and rag.py. A driver thread plays the scenario (dial, button, user speech,
 server faults); at the end the observations are checked against the oracles
 and one JSON line is printed.
 """
+import importlib.abc
+import importlib.machinery
 import json
 import os
 import queue
@@ -244,6 +246,12 @@ def check(pending):
     for t, th, e in W.thread_exc:
         flag('THREAD_CRASH', f'{t:.1f}s in thread {th}: {e}')
 
+    # LEDs dark while the phone starts
+    first_led = next((t for t, s in W.led_frames if s not in ('off', 'dark')), None)
+    if first_led is None or first_led > 1.5:
+        flag('BOOT_LEDS_DARK', f'the LEDs stayed dark for the first '
+                               f'{first_led if first_led is not None else S.now():.1f}s of the start-up')
+
     # boot path: random prompt, lost GPIO edges
     for t, line in W.stdout:
         if 'using random prompt' in line:
@@ -462,12 +470,12 @@ for fn, name in ((mic_loop, 'sim-mic'), (sampler, 'sim-sampler'), (driver, 'sim-
 if CFG.get('user') is not None:
     threading.Thread(target=user_loop, args=(CFG['user'],), name='sim-user', daemon=True).start()
 
-try:
-    import voice_agent                         # pays the 7.8 s import cost (fake captioning_lib)
-    import voice_agent_utils
-    if hasattr(voice_agent_utils, 'pid_alive'):
-        voice_agent_utils.pid_alive = W.server_alive
+def patch_voice_agent_utils(m):
+    if hasattr(m, 'pid_alive'):
+        m.pid_alive = W.server_alive
 
+
+def patch_voice_agent(voice_agent):
     shim_q = types.ModuleType('queue_shim')
 
     class _ScaledQueue(queue.Queue):
@@ -511,9 +519,41 @@ try:
         return _orig_int(self)
     voice_agent.LLmToAudio.interrupt = _interrupt
 
-    import leds
+
+def patch_leds(leds):
     leds.POLL_INTERVAL = 0.1 * S.SCALE
 
+
+class _PatchOnImport(importlib.abc.MetaPathFinder):
+    """Patch a module right after it is first imported, wherever that happens.
+
+    The CLI imports its heavy modules itself, after the LEDs and the GPIO are
+    up; importing them here first would move that cost to before the LEDs.
+    """
+
+    def __init__(self, hooks):
+        self.hooks = hooks
+
+    def find_spec(self, name, path=None, target=None):
+        hook = self.hooks.get(name)
+        if hook is None:
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(name, path)
+        if spec is None or spec.loader is None:
+            return spec
+        exec_module = spec.loader.exec_module
+
+        def exec_and_patch(module):
+            exec_module(module)
+            hook(module)
+        spec.loader.exec_module = exec_and_patch
+        return spec
+
+
+sys.meta_path.insert(0, _PatchOnImport({'voice_agent': patch_voice_agent, 'leds': patch_leds,
+                                        'voice_agent_utils': patch_voice_agent_utils}))
+
+try:
     import voice_agent_cli
     shim_t = types.ModuleType('threading_shim')
     shim_t.__dict__.update(threading.__dict__)
