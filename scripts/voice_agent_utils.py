@@ -1,8 +1,84 @@
 import argparse
 import contextlib
 import json
+import os
 import random
 import re
+import time
+
+
+# Exit codes the boot script (startup_script.sh, mode 3) acts on. Anything
+# else that is not 0 counts as a crash.
+EXIT_RESTART_PIPELINE = 3   # asked for: restart both servers and the agent
+EXIT_SERVER_STUCK = 4       # a server process runs but never became ready
+
+# How long the agent waits for a server that is still loading. Loading the
+# chat model takes ~21 s on mains and longer on the crank at 1.5 GHz; this
+# is a ceiling, not a delay: the agent goes on the moment the server answers,
+# and stops waiting at once if the server's process has died.
+SERVER_WAIT_CEILING = 90.0
+
+
+class ServerNotReady(ConnectionError):
+    """A server did not become ready. stuck: its process still runs."""
+
+    def __init__(self, message, stuck=False):
+        super().__init__(message)
+        self.stuck = stuck
+
+
+def pid_alive(pid):
+    """Does process pid still run? Read from /proc on Linux; where there is
+    no /proc (a PC) the answer is unknown and taken as yes, which leaves only
+    the time ceiling."""
+    if not os.path.isdir('/proc'):
+        return True
+    try:
+        with open(f'/proc/{pid}/stat') as f:
+            stat = f.read()
+    except OSError:
+        return False
+    # The state follows the command name in brackets; a zombie has exited.
+    return stat.rsplit(')', 1)[-1].split()[0] not in ('Z', 'X')
+
+
+def env_pid(name):
+    """A PID handed over by the boot script in environment variable name."""
+    try:
+        return int(os.environ.get(name, ''))
+    except ValueError:
+        return None
+
+
+def wait_for_server(is_ready, name, pid=None, ceiling=SERVER_WAIT_CEILING, retry_delay=1.0):
+    """Wait until is_ready() returns true.
+
+    With pid (the server's process, from the boot script) the wait ends at
+    once when that process has died: the boot script starts it again, and a
+    dead server is not worth 90 s of waiting. Without pid, or while the
+    process lives, it waits up to ceiling seconds. Raises ServerNotReady.
+    """
+    t0 = time.time()
+    attempt = 0
+    while True:
+        try:
+            ready = is_ready()
+        except Exception:
+            ready = False
+        if ready:
+            return
+        if pid is not None and not pid_alive(pid):
+            raise ServerNotReady(f"{name}: its process ({pid}) has exited")
+        waited = time.time() - t0
+        if waited >= ceiling:
+            raise ServerNotReady(
+                f"{name} not ready after {waited:.0f} s"
+                + (f" although its process ({pid}) still runs" if pid is not None else ""),
+                stuck=pid is not None)
+        attempt += 1
+        if attempt == 1 or attempt % 10 == 0:
+            print(f">> Waiting for {name}... ({waited:.0f} s)")
+        time.sleep(retry_delay)
 
 
 @contextlib.contextmanager
@@ -233,6 +309,7 @@ def get_cli_argument_parser():
     parser.add_argument("--speaking_rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
     parser.add_argument("--max_words_to_speak_start", type=int, default=10, help="maximum number of words to speech onset after a prompt; reduce if latency too high.")
     parser.add_argument("--max_words_to_speak", type=int, default=25, help="always produce speech after this many words were produced ignoring sentence boundaries.")        
+    parser.add_argument("--server_wait", type=float, default=SERVER_WAIT_CEILING, help="Seconds to wait at most for each server to finish loading. A ceiling, not a delay; with the PIDs from the boot script the wait also ends at once when a server's process has died.")
     parser.add_argument("--exit_phrase", default=None, help=f"Saying this phrase (as whole words) stops the agent, e.g. '{DEFAULT_EXIT_COMMAND}'. Off by default: on the phone nobody needs to stop it by voice, and a phrase in a question would silence it.")
     parser.add_argument("--max_history_turns", type=int, default=DEFAULT_MAX_HISTORY_TURNS, help="Keep at most this many of the latest turns (question + answer) in the conversation sent to the model; older ones are dropped so the context window never overflows. 0 = no turn limit (the character limit still applies).")
     parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")

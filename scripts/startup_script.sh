@@ -107,10 +107,21 @@ case $MODE in
         # both servers down with it.
         CHAT_PID=""
         EMBED_PID=""
+        # Stop both servers and wait (up to 5 s, then SIGKILL) until they are
+        # gone, so a new one can take the port.
+        stop_servers() {
+            for p in $CHAT_PID $EMBED_PID; do kill "$p" 2>/dev/null; done
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+                kill -0 $CHAT_PID 2>/dev/null || kill -0 $EMBED_PID 2>/dev/null || break
+                sleep 0.5
+            done
+            for p in $CHAT_PID $EMBED_PID; do kill -9 "$p" 2>/dev/null; done
+            CHAT_PID=""
+            EMBED_PID=""
+        }
         stop_all() {
             echo "Stopping OutdoorGPT..."
-            [ -n "$CHAT_PID" ] && kill "$CHAT_PID" 2>/dev/null
-            [ -n "$EMBED_PID" ] && kill "$EMBED_PID" 2>/dev/null
+            stop_servers
             exit 0
         }
         trap stop_all INT TERM
@@ -130,14 +141,24 @@ case $MODE in
             fi
 
             echo "Starting OutdoorGPT..."
-            # The agent waits for both servers itself (~30s retry each), so the
-            # background starts above do not need a sleep here.
+            # The agent waits for both servers itself, so the background starts
+            # above need no sleep here. It gets their PIDs: while a server's
+            # process lives it waits up to SERVER_WAIT seconds for the model to
+            # load, and it stops waiting at once when that process has died.
             # python -u: unbuffered output, so journal timestamps mark the moment a
             # line was printed rather than the moment a buffer happened to flush.
             STARTED=$SECONDS
-            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} $VERBOSE_FLAG $SPEECH_FLAGS
+            OUTDOORGPT_CHAT_PID=$CHAT_PID OUTDOORGPT_EMBED_PID=$EMBED_PID \
+            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS
             RC=$?
             RAN=$(( SECONDS - STARTED ))
+            # 4: a server process runs but never became ready (see
+            # voice_agent_utils.EXIT_SERVER_STUCK). Restarting only the agent
+            # would find it stuck again, so replace both servers.
+            if [ "$RC" = 4 ]; then
+                echo "A server never became ready; stopping both servers to start them again"
+                stop_servers
+            fi
             [ "$RAN" -ge 120 ] && DELAY=${RESTART_DELAY:-3}
             echo "OutdoorGPT stopped (exit code $RC after ${RAN}s); starting it again in ${DELAY}s"
             # sleep in the background and wait for it, so a SIGTERM is acted

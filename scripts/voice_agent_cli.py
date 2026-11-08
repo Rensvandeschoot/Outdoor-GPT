@@ -26,6 +26,7 @@
 # silence it until the boot script restarts it); --exit_phrase "please quit"
 # turns it on for a session at a desk, matched as whole words.
 
+import sys
 import threading
 import time
 start_time = time.time()
@@ -147,6 +148,8 @@ def main():
             embedding_server_url=args.embedding_server_url,
             top_k=args.rag_top_k,
             min_score=args.rag_min_score,
+            server_pid=voice_agent_utils.env_pid('OUTDOORGPT_EMBED_PID'),
+            server_wait=args.server_wait,
         )
         print(f">> RAG enabled: {len(rag_retriever.chunks)} chunks from '{args.rag_index}'")
 
@@ -171,6 +174,9 @@ def main():
         tts_warmup=args.tts_warmup,
         tts_threads=args.tts_threads,
         eink=eink,
+        # Set by the boot script, so a dead server ends the wait at once.
+        server_pid=voice_agent_utils.env_pid('OUTDOORGPT_CHAT_PID'),
+        server_wait=args.server_wait,
     )
     print(f">> Initialized LLmToAudioOutput in {time.time() - start_time:.2f} seconds -- <<")
 
@@ -391,5 +397,17 @@ def main():
         if log_file:
             log_file.close()
 
+
+def cli():
+    """main(), with the exit codes the boot script acts on."""
+    try:
+        main()
+    except voice_agent_utils.ServerNotReady as e:
+        print(f">> {e}")
+        # A server whose process runs but never got ready will not get
+        # better by restarting only the agent: ask for both servers too.
+        sys.exit(voice_agent_utils.EXIT_SERVER_STUCK if e.stuck else 1)
+
+
 if __name__ == "__main__":
-    main()
+    cli()

@@ -71,6 +71,8 @@ class LLmToAudio:
                  eink=None,          # EinkRecipeDisplay made by the CLI, which draws on it before this exists
                  max_history_turns=voice_agent_utils.DEFAULT_MAX_HISTORY_TURNS,   # 0 = no turn limit
                  max_history_chars=voice_agent_utils.DEFAULT_MAX_HISTORY_CHARS,
+                 server_pid=None,    # llama-server's PID from the boot script, if any
+                 server_wait=voice_agent_utils.SERVER_WAIT_CEILING,
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
@@ -155,7 +157,11 @@ class LLmToAudio:
         ## Init LLM and prompts
         self.llm_server_url = llm_server_url
         self.llm_client = LLMClient(base_url=llm_server_url, api_key=voice_agent_utils.DEFAULT_LLM_SERVER_API_KEY)
-        self.llm_client.wait_for_ready(max_retries=30, retry_delay=1.0)
+        # Was a fixed 30 x 1 s: a model that loaded slower than that (crank
+        # power, a cold SD card) ended the agent. Now: as long as the server's
+        # process lives, up to server_wait; at once when it has died.
+        voice_agent_utils.wait_for_server(self.llm_client.health, "LLM server",
+                                          pid=server_pid, ceiling=server_wait)
         if tts_warmup:
             # The first synthesis pays onnxruntime's one-off setup cost and is
             # heavier than any later sentence. Paying it here, with both

@@ -44,6 +44,8 @@ def install_clock():
 
 PIN_BUTTON = 22
 DIAL_PINS = {'pos1': 23, 'pos2': 24, 'pos3': 17}
+CHAT_PID = 90001        # what the boot script hands the agent in OUTDOORGPT_*_PID
+EMBED_PID = 90002
 
 W = None
 
@@ -173,7 +175,7 @@ class World:
     # -- servers ----------------------------------------------------------
     def chat_ready(self):
         c = self.cfg
-        if c.get('chat_dead'):
+        if c.get('chat_dead') or c.get('chat_stuck'):
             return False
         if self.chat_killed_at is not None and now() >= self.chat_killed_at:
             return False
@@ -183,6 +185,18 @@ class World:
         if self.cfg.get('embed_dead'):
             return False
         return now() >= self.embed_start + self.cfg['_embed_load']
+
+    def server_alive(self, pid):
+        """Stands in for voice_agent_utils.pid_alive. chat_dead / embed_dead:
+        the process exited at once (a model file missing); chat_stuck: it runs
+        but never answers; kill_chat: it dies at that moment."""
+        c = self.cfg
+        if pid == CHAT_PID:
+            killed = self.chat_killed_at is not None and now() >= self.chat_killed_at
+            return not c.get('chat_dead') and not killed
+        if pid == EMBED_PID:
+            return not c.get('embed_dead')
+        return True
 
     # -- audio ------------------------------------------------------------
     @property

@@ -126,6 +126,7 @@ SCENARIOS = [
     S('E8', 'a question containing "please quite"',
       user={'turns': 1, 'questions': ['can you please quite simply explain how to purify water']}),
     S('E9', 'one request fails (server error), then ask again', user={'turns': 3}, fail_requests=[2]),
+    S('E10', 'chat server runs but never gets ready (hangs while loading)', chat_stuck=True, end=150),
 
     # F: combinations
     S('F1', 'start 2, turn to 3 during start-up and press the button', start_dial='pos2',

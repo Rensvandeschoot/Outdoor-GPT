@@ -437,10 +437,15 @@ def boot_argv(c):
     for key, flag in (('TTS_THREADS', '--tts_threads'), ('ASR_THREADS', '--asr_threads')):
         if c.get(key) not in (None, '', '0'):
             argv += [flag, c[key]]
+    argv += ['--server_wait', c.get('SERVER_WAIT', '90')]
     return argv
 
 
 sys.argv = boot_argv(read_config_sh(os.path.join(SCRIPTS, 'config.sh')))
+# As the boot script does: the servers' PIDs, so the agent can tell a server
+# that is still loading from one whose process has died.
+os.environ['OUTDOORGPT_CHAT_PID'] = str(S.CHAT_PID)
+os.environ['OUTDOORGPT_EMBED_PID'] = str(S.EMBED_PID)
 
 def watchdog():
     while S.now() < CFG['end'] + 40:
@@ -459,6 +464,9 @@ if CFG.get('user') is not None:
 
 try:
     import voice_agent                         # pays the 7.8 s import cost (fake captioning_lib)
+    import voice_agent_utils
+    if hasattr(voice_agent_utils, 'pid_alive'):
+        voice_agent_utils.pid_alive = W.server_alive
 
     shim_q = types.ModuleType('queue_shim')
 
@@ -517,7 +525,7 @@ try:
     shim_t.Timer = _ScaledTimer
     voice_agent_cli.threading = shim_t
 
-    voice_agent_cli.main()
+    getattr(voice_agent_cli, 'cli', voice_agent_cli.main)()
     W.agent_exit = {'t': round(S.now(), 2), 'how': 'main() returned'}
 except BaseException as e:      # noqa: BLE001 - SystemExit included: that is a dead phone too
     W.agent_exit = {'t': round(S.now(), 2), 'how': f'{type(e).__name__}: {str(e)[:160]}'}

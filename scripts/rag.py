@@ -11,10 +11,11 @@ for ingestion and for queries.
 
 import json
 import os
-import time
 
 import httpx
 import numpy as np
+
+from voice_agent_utils import SERVER_WAIT_CEILING, wait_for_server
 
 
 def embed_texts(texts, embedding_server_url, client=None, timeout=30.0):
@@ -46,7 +47,8 @@ class RagRetriever:
     """Loads the index and returns relevant chunks for a query."""
 
     def __init__(self, index_dir, embedding_server_url,
-                 top_k=2, min_score=0.35, max_context_chars=1200):
+                 top_k=2, min_score=0.35, max_context_chars=1200,
+                 server_pid=None, server_wait=SERVER_WAIT_CEILING):
         chunks_file = os.path.join(index_dir, "chunks.json")
         embeddings_file = os.path.join(index_dir, "embeddings.npy")
         if not os.path.isfile(chunks_file) or not os.path.isfile(embeddings_file):
@@ -69,16 +71,14 @@ class RagRetriever:
         self.client = httpx.Client(timeout=10.0)
 
         # Check that the embedding server is reachable, allowing it time to
-        # come up when everything starts together at boot (off-grid autostart).
-        for attempt in range(30):
-            try:
-                embed_texts(["ping"], self.embedding_server_url, client=self.client)
-                break
-            except Exception:
-                if attempt == 29:
-                    raise
-                print(f">> Waiting for embedding server at {self.embedding_server_url}... ({attempt + 1}/30)")
-                time.sleep(1.0)
+        # come up when everything starts together at boot (off-grid autostart):
+        # as long as its process lives (server_pid, from the boot script), up
+        # to server_wait seconds; at once if that process has died.
+        def ping():
+            embed_texts(["ping"], self.embedding_server_url, client=self.client)
+            return True
+        wait_for_server(ping, f"embedding server at {self.embedding_server_url}",
+                        pid=server_pid, ceiling=server_wait)
 
     def retrieve(self, query):
         """Return list of (score, chunk) for the query, best first."""
