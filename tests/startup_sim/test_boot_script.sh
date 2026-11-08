@@ -58,6 +58,7 @@ case "$*" in
 esac
 n=$(( $(cat runs 2>/dev/null || echo 0) + 1 )); echo "$n" > runs
 echo "$$" > agent.pid
+echo "$*" > args.log
 echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-}" >> agent.log
 line=$(sed -n "${n}p" plan 2>/dev/null); [ -z "$line" ] && line="999 0"
 set -- $line
@@ -117,6 +118,8 @@ fi
   || { fail "servers started more than once:"; cat "$A/servers.log"; }
 grep -q "OutdoorGPT stopped (exit code 1" "$A/script.out" && ok "each stop is logged with its exit code" \
   || fail "no 'OutdoorGPT stopped' line in the output"
+grep -q -- "--llm_server_url http://localhost:8080/v1 --embedding_server_url http://localhost:8081/v1" "$A/args.log" \
+  && ok "the agent gets the server addresses from CHAT_PORT / EMBED_PORT" || { fail "server addresses:"; cat "$A/args.log"; }
 
 echo "2. The chat server dies: it is started again before the agent"
 setup server

@@ -208,7 +208,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `CHAT_MODEL` / `CHAT_CONTEXT` | LFM2.5-1.2B, 4096 | Context must hold the retrieved chunks plus the conversation |
 | `EMBED_MODEL` | all-MiniLM-L6-v2 | Must be the same model the index was built with |
 | `RAG_INDEX` | `rag_index` | Where the index lives |
-| `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
+| `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | The servers listen on these, and the boot script hands the agent the same addresses, so a change here moves both |
 | `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
 | `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
 | `BOOT_LOGS_KEEP` | `5` | Boots whose logs are kept in `logs/boot/` (script, agent and both servers), so the reason for a restart survives it; see [Troubleshooting the boot](#troubleshooting-the-boot) |

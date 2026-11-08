@@ -494,6 +494,8 @@ def boot_argv(c):
             '--end_of_utterance_duration', c.get('SILENCE_SECONDS', '0.7'),
             '--prompt_file', PROMPTS,
             '--rag_index', c.get('RAG_INDEX', 'rag_index'),
+            '--llm_server_url', f"http://localhost:{c.get('CHAT_PORT', '8080')}/v1",
+            '--embedding_server_url', f"http://localhost:{c.get('EMBED_PORT', '8081')}/v1",
             '--max_history_turns', c.get('HISTORY_TURNS', '8')]
     if c.get('VERBOSE') == '1':
         argv.append('--verbose')
