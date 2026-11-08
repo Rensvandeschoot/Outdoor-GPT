@@ -75,6 +75,9 @@ class StatusLeds:
         self._thread = None
         self._stop = threading.Event()
         self._last_written = None
+        self._hold = None           # (seconds held, reset after, restart after)
+        self._ack_until = 0.0       # brighter breath until then: a press was seen
+        self._override = None       # a frame that stays, whatever the state
 
     # -- plumbing ---------------------------------------------------------
     def _log(self, msg):
@@ -118,6 +121,26 @@ class StatusLeds:
         """The agent is ready: from now on mirror its state, not 'starting'."""
         self._handler = output_handler
 
+    def set_hold(self, seconds, reset_after=2.0, restart_after=20.0):
+        """The yellow button has been held this long (None: let go).
+
+        From reset_after the LEDs turn white: let go now and this mode starts
+        over. Two seconds later red takes over and grows brighter until
+        restart_after, when the whole pipeline restarts.
+        """
+        self._hold = None if seconds is None else (seconds, reset_after, restart_after)
+
+    def acknowledge(self):
+        """A press that has nothing to act on yet (the phone is starting):
+        one brighter breath, so it is seen to have arrived."""
+        self._ack_until = time.time() + 0.6
+
+    def show_restart(self):
+        """Full red, now and for good: the pipeline restarts (the process is
+        about to end, and APA102s keep their last colour)."""
+        self._override = (COLOURS['error'], MAX_BRIGHTNESS)
+        self._write(*self._override)
+
     def _state(self):
         h = self._handler
         if h is None:
@@ -139,8 +162,19 @@ class StatusLeds:
 
     def _frame(self, now):
         """(rgb, brightness) to show at time now."""
+        if self._override is not None:
+            return self._override
+        if self._hold is not None:
+            held, reset_after, restart_after = self._hold
+            if held >= reset_after + 2.0:
+                frac = min(1.0, (held - reset_after - 2.0) / (restart_after - reset_after - 2.0))
+                return COLOURS['error'], 1 + int(frac * (MAX_BRIGHTNESS - 1))
+            if held >= reset_after:
+                return COLOURS['hold'], MAX_BRIGHTNESS
         state = self._state()
         if state == 'starting':
+            if now < self._ack_until:
+                return COLOURS['starting'], MAX_BRIGHTNESS
             return COLOURS['starting'], level(breath(now, BOOT_PERIOD))
         if state == 'thinking':
             return COLOURS['thinking'], level(breath(now, PULSE_PERIOD))

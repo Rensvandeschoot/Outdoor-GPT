@@ -15,10 +15,15 @@
 #
 # Controls:
 #   Rotary dial       - selects one of the first three prompts (full reset)
-#   Interrupt button  - stops the agent mid-speech; after a recipe has been
-#                       delivered, starts a new recipe session instead
+#   Yellow button     - press: stops the agent talking or thinking; in recipe
+#                       mode (a recipe being written or delivered) starts a
+#                       new recipe instead
+#                     - hold 2 s: starts this mode over (opening line,
+#                       cleared conversation)
+#                     - hold 20 s: restarts the whole pipeline (exit code 3
+#                       for the boot script); see button_gestures.py
 #   Keyboard (with --enable_keyboard_control):
-#     ENTER           - same as the interrupt button
+#     ENTER           - same as a press of the button
 #     SPACE           - mute / unmute the microphone
 #     g / s / f       - prompt 1 / 2 / 3, mirroring the dial
 #
@@ -98,6 +103,48 @@ def main():
             gpio_handler = OrangePi5ProGPIOHandler()
         gpio_handler.setup(add_interrupt_button=True, add_rotary_dial=True)
         print(f">> GPIO handler: {gpio_handler.__class__.__name__}")
+
+    # The yellow button, watched from now on, while the models still load
+    # (button_gestures.py). Press and 2 s hold need the agent, which does not
+    # exist yet: until it does (ctx['va']), they only show on the LEDs that
+    # they arrived. The 20 s hold works from the start.
+    ctx = {'va': None, 'log_file': None}
+
+    def gesture_press():
+        if ctx['va'] is None:
+            status_leds.acknowledge()
+        else:
+            ctx['on_press']()
+
+    def gesture_hold():
+        if ctx['va'] is None:
+            status_leds.acknowledge()
+        else:
+            ctx['on_hold']()
+
+    def gesture_restart():
+        """Held 20 s: restart both servers and the agent (the boot script does
+        that on exit code EXIT_RESTART_PIPELINE). os._exit, not sys.exit: this
+        must work even when the rest of the agent hangs."""
+        print(">> Button held 20 s: restarting the whole pipeline")
+        status_leds.show_restart()
+        if ctx['log_file']:
+            try:
+                ctx['log_file'].write("\n[RESTART] button held 20 s\n")
+                ctx['log_file'].flush()
+            except Exception:
+                pass
+        sys.stdout.flush()
+        os._exit(voice_agent_utils.EXIT_RESTART_PIPELINE)
+
+    button = None
+    if gpio_handler:
+        from button_gestures import ButtonGestures
+        button = ButtonGestures(gpio_handler.is_interrupt_pressed, gesture_press, gesture_hold,
+                                gesture_restart, leds=status_leds, verbose=args.verbose)
+        button.start()
+        print(">> Yellow button: press = stop (a new recipe in recipes), hold 2 s = start this mode over, "
+              "hold 20 s = restart everything")
 
     # The e-ink panel next, before any model loads: the instruction card goes
     # up while the phone is still starting, so the screen explains what to do
@@ -270,18 +317,32 @@ def main():
             print(f"[Interrupt agent #{button_press_count['n']} done]")
 
     def on_button_press():
-        """Interrupt the agent, or start a fresh recipe session."""
+        """Short press: stop the agent talking or thinking; in recipes, start
+        a fresh recipe session."""
         # Every press puts the instruction card back on the screen: the button
         # means "start over", and the card is what a newcomer needs to see.
         eink.render_image_async()
+        oh = va.output_handler
         # Recipe mode delivers one recipe and then stops listening, so there is
         # nothing to interrupt. Restart the same mode instead: cleared context
-        # and the opening question again, ready for new ingredients.
-        if getattr(va.output_handler, 'recipe_delivered', False):
+        # and the opening question again, ready for new ingredients. The same
+        # while a recipe is being written: the press means "not this one".
+        if getattr(oh, 'recipe_delivered', False) or getattr(oh, 'recipe_requested', False):
             switch_to_prompt(current_prompt['p'])
             return
-        if va.output_handler.is_speaking or va.output_handler.is_processing:
+        if oh.is_speaking or oh.is_processing:
             on_interrupt_agent()
+            return
+        # The thinking pause (blue): drop this question and listen again; the
+        # conversation stays. A press here used to do nothing.
+        if getattr(oh, 'is_generating', False):
+            va.request_cancel()
+
+    def on_button_hold():
+        """Held 2 s: start this mode over, its opening line and a cleared
+        conversation; in recipes that is a new recipe."""
+        eink.render_image_async()
+        switch_to_prompt(current_prompt['p'])
 
     def switch_to_prompt(new_prompt):
         # Called from the dial's timer and the button's callback thread. The
@@ -300,10 +361,11 @@ def main():
             silence_seconds=silence_for(new_prompt)
         )
 
-    # Setup GPIO interrupt button via gpio_handler
-    if gpio_handler:
-        gpio_handler.set_interrupt_callback(on_button_press)
-        print(">> GPIO interrupt button enabled (interrupts speech; restarts recipe mode once a recipe is done)")
+    # The button now acts on the agent (it was watched since the start). Its
+    # upstream callback (gpio_handler.set_interrupt_callback) is not used:
+    # that one fires on release only, and swallows holds of 2 s or more.
+    ctx.update(on_press=on_button_press, on_hold=on_button_hold, log_file=log_file)
+    ctx['va'] = va
 
     # -- rotary switch -> prompt selection --
     # Debounce so dial sweeps don't queue multiple prompt switches, and
@@ -420,6 +482,8 @@ def main():
                 print("==================================")
             else:
                 print("\n>> No TTFB samples collected.")
+        if button:
+            button.stop()
         # Cancel any pending rotary debounce timer
         if rotary_state.get('timer'):
             rotary_state['timer'].cancel()

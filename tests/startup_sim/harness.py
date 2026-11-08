@@ -239,7 +239,10 @@ def check(pending):
         flags.append({'code': code, 'msg': msg})
 
     ready = phase['ready'][0] if phase['ready'] else None
-    if W.agent_exit:
+    if W.agent_exit and W.agent_exit['how'].startswith('os._exit(3)'):
+        flag('PIPELINE_RESTART', f"{W.agent_exit['t']:.1f}s the agent asked the boot script to restart "
+                                 f"everything (exit code 3)")
+    elif W.agent_exit:
         # What happens next is up to the boot script (see test_boot_script.sh):
         # without a restart loop this is a dead box until the power is cycled.
         flag('AGENT_EXIT', f"agent process ended at {W.agent_exit['t']:.1f}s ({W.agent_exit['how']})")
@@ -260,12 +263,16 @@ def check(pending):
             flag('NO_DIAL_POSITION', f'{t:.1f}s: {line}')
     lost = [(t, d) for t, k, d in W.events if k == 'gpio_edge_lost']
     lost_dial = [(t, d) for t, d in lost if d['pin'] != S.PIN_BUTTON and d['edge'] == 'press']
-    lost_btn = [(t, d) for t, d in lost if d['pin'] == S.PIN_BUTTON and d['edge'] == 'release']
+    # A short press before the agent is ready has nothing to act on; the LEDs
+    # must still show that it arrived (one breath at full brightness).
+    lost_btn = [(pr['up'], None) for pr in W.presses
+                if pr['dur'] < 2.0 and pr['state_at_up'].get('led') in ('starting', 'dark')
+                and not any(pr['down'] - 0.1 <= t <= pr['up'] + 1.0 for t in W.boot_acks)]
     if lost_dial:
         flag('DIAL_EVENT_LOST', 'dial edges before the callback existed: ' +
              ', '.join(f"{t:.1f}s pin{d['pin']}" for t, d in lost_dial))
     if lost_btn:
-        flag('BUTTON_LOST_AT_BOOT', 'button released before the callback existed: ' +
+        flag('BUTTON_LOST_AT_BOOT', 'a press during start-up showed nothing on the LEDs: ' +
              ', '.join(f'{t:.1f}s' for t, d in lost_btn))
 
     # dial vs the prompt actually in use
@@ -335,25 +342,42 @@ def check(pending):
     # the button
     for pr in W.presses:
         up, st = pr['up'], pr['state_at_up']
+        nxt = [u['t0'] for u in W.utterances if u['t0'] > up]
+        before_next = nxt[0] if nxt else up + 25
         if pr['dur'] >= 2.0:
-            hit = [r for r in W.resets if up - 0.1 <= r['t0'] <= up + 3] + \
-                  [i for i in W.out_interrupts if up - 0.1 <= i <= up + 3]
-            if not hit:
-                flag('LONG_PRESS_NO_EFFECT', f"{pr['down']:.1f}-{up:.1f}s held {pr['dur']:.1f}s: nothing happened")
+            if not [t for t, s in W.led_frames if s == 'hold' and pr['down'] + 1.9 <= t <= up]:
+                flag('HOLD_NOT_SHOWN', f"{pr['down']:.1f}-{up:.1f}s held {pr['dur']:.1f}s: the LEDs never "
+                                       f"turned white to say 'let go now'")
+        if pr['dur'] >= 20.0:
+            ex = W.agent_exit or {}
+            if not (ex.get('how', '').startswith('os._exit(3)') and pr['down'] + 19.5 <= ex['t'] <= pr['down'] + 21.5):
+                flag('RESTART_HOLD_NO_EFFECT', f"{pr['down']:.1f}s held {pr['dur']:.1f}s: no pipeline restart at 20 s")
+            continue
+        if pr['dur'] >= 2.0:
+            if ready is None or up < ready:
+                continue    # still starting: the LEDs show it, there is nothing to reset yet
+            if not [r for r in W.resets if up - 0.1 <= r['t0'] <= up + 3]:
+                flag('LONG_PRESS_NO_EFFECT', f"{pr['down']:.1f}-{up:.1f}s held {pr['dur']:.1f}s: the mode did not "
+                                             f"start over")
             continue
         if st.get('delivered'):
             if not [r for r in W.resets if up - 0.1 <= r['t0'] <= up + 2]:
                 flag('BUTTON_NO_RESTART', f'{up:.1f}s press after a recipe did not restart the mode')
+        elif st.get('gen') and not (st.get('spk') or st.get('proc')) and st.get('recipe_mode'):
+            drawn = [e for e in W.eink if e['kind'] == 'recipe' and e['t0'] > up]
+            if drawn or not [r for r in W.resets if up - 0.1 <= r['t0'] <= up + 3]:
+                flag('BUTTON_IGNORED_THINKING', f'{up:.1f}s press while a recipe was being written: '
+                                                f'{"it was still drawn" if drawn else "no new recipe was started"}')
         elif st.get('gen') and not (st.get('spk') or st.get('proc')):
-            if value_at(up + 1.5, 'gen') or [p for p in W.played if up + 1.0 < p['start'] < up + 25 and
+            # The turn stops at the model's next token, so allow for the first
+            # token's wait; what must not happen is the answer being spoken.
+            if value_at(up + 8.0, 'gen') or [p for p in W.played if up + 1.0 < p['start'] < before_next and
                                               any(w in p['text'].split() for w in TAGS)]:
                 flag('BUTTON_IGNORED_THINKING', f'{up:.1f}s press during the thinking pause (blue LED): '
                                                 f'generation went on and the answer was still spoken')
         elif st.get('spk') or st.get('proc'):
-            later = [p for p in W.played if up + 1.0 < p['start'] < up + 25 and
+            later = [p for p in W.played if up + 1.0 < p['start'] < before_next and
                      any(w in p['text'].split() for w in TAGS)]
-            nxt = [u['t0'] for u in W.utterances if u['t0'] > up]
-            later = [p for p in later if not nxt or p['start'] < nxt[0]]
             if later:
                 flag('BUTTON_IGNORED_SPEECH', f'{up:.1f}s press while speaking: the answer went on at '
                                               f"{later[0]['start']:.1f}s")
@@ -555,6 +579,16 @@ sys.meta_path.insert(0, _PatchOnImport({'voice_agent': patch_voice_agent, 'leds'
 
 try:
     import voice_agent_cli
+    # The 20 s hold ends the process with os._exit(3) for the boot script.
+    # Here that ends the run: record it, write the result, stop.
+    shim_os = types.ModuleType('os_shim')
+    shim_os.__dict__.update(os.__dict__)
+
+    def _agent_exit(code):
+        W.agent_exit = {'t': round(S.now(), 2), 'how': f'os._exit({code})'}
+        finish([])
+    shim_os._exit = _agent_exit
+    voice_agent_cli.os = shim_os
     shim_t = types.ModuleType('threading_shim')
     shim_t.__dict__.update(threading.__dict__)
 

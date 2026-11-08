@@ -195,6 +195,15 @@ case $MODE in
                 echo "A server never became ready; stopping both servers to start them again"
                 stop_servers
             fi
+            # 3: the yellow button was held 20 s (EXIT_RESTART_PIPELINE): a
+            # restart asked for, so both servers and the agent start again
+            # now, without the wait.
+            if [ "$RC" = 3 ]; then
+                echo "Restarting the whole pipeline (button held 20 s)"
+                stop_servers
+                DELAY=${RESTART_DELAY:-3}
+                continue
+            fi
             [ "$RAN" -ge 120 ] && DELAY=${RESTART_DELAY:-3}
             echo "OutdoorGPT stopped (exit code $RC after ${RAN}s); starting it again in ${DELAY}s"
             # sleep in the background and wait for it, so a SIGTERM is acted

@@ -73,6 +73,7 @@ class World:
         self.eink = []
         self.convlog = []
         self.presses = []
+        self.boot_acks = []     # 'starting' shown at full brightness: a press acknowledged
         self.dial_moves = []
         self.stdout = []
         self.thread_exc = []
@@ -278,6 +279,8 @@ class World:
             if state != self.led_state:
                 self.led_frames.append((round(now(), 2), state))
             self.led_state = state
+            if state == 'starting' and bri >= device_settings.LED_MAX_BRIGHTNESS:
+                self.boot_acks.append(round(now(), 2))
 
     # -- agent state ------------------------------------------------------
     def va_mode(self):
