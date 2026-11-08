@@ -239,6 +239,9 @@ def check(pending):
         flags.append({'code': code, 'msg': msg})
 
     ready = phase['ready'][0] if phase['ready'] else None
+    if CFG.get('button_stuck') and W.agent_exit and W.agent_exit['how'].startswith('os._exit(3)'):
+        flag('RESTART_FROM_STUCK_BUTTON', f"{W.agent_exit['t']:.1f}s a button that read pressed from power-up "
+                                          f"was taken for a 20 s hold: the pipeline restarts, in a loop")
     if W.agent_exit and W.agent_exit['how'].startswith('os._exit(3)'):
         flag('PIPELINE_RESTART', f"{W.agent_exit['t']:.1f}s the agent asked the boot script to restart "
                                  f"everything (exit code 3)")

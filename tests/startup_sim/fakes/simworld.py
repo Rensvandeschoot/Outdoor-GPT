@@ -144,7 +144,9 @@ class World:
         self.dial_pos = pos
         for p, pin in DIAL_PINS.items():
             self.pins[pin] = (p == pos) and pin not in self.broken_pins
-        self.pins[PIN_BUTTON] = False
+        # button_stuck: the button pin reads pressed from power-up (a wiring
+        # fault, a normally-closed switch, a stuck button).
+        self.pins[PIN_BUTTON] = bool(self.cfg.get('button_stuck'))
 
     def turn_dial(self, pos, gap=0.04, bounce=0):
         """Break-before-make: old contact opens, then the new one closes."""

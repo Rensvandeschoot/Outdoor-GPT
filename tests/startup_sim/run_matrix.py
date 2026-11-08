@@ -39,6 +39,7 @@ LEGEND = {
     'RECOVERY_NOT_SHOWN': 'starting again after an error, but the breath showed no red flicks',
     'FAILURE_NOT_SHOWN': 'starting after three failed starts in a row, but the LEDs did not blink red',
     'FALSE_ERROR_SIGNAL': 'red on the LEDs during a normal start-up',
+    'RESTART_FROM_STUCK_BUTTON': 'a button that read pressed from power-up restarted the pipeline (a restart loop)',
     'PIPELINE_RESTART': 'info: the agent asked the boot script to restart everything (button held 20 s)',
     'RANDOM_PROMPT': 'no dial position could be read, so a random mode was chosen',
     'BOOT_LEDS_DARK': 'the LEDs stayed dark for more than 3 s of the start-up (not counting the kernel)',
@@ -123,6 +124,7 @@ SCENARIOS = [
     S('D11', 'hold 3 s while it listens: start the mode over', events=[{'at': 'ready', 'delay': 2, 'do': 'press', 'dur': 3.0}]),
     S('D12', 'hold 20 s while it listens: restart everything', events=[{'at': 'ready', 'delay': 2, 'do': 'press', 'dur': 21.0}]),
     S('D13', 'hold 20 s during start-up (t=3s): restart everything', events=[{'t': 3, 'do': 'press', 'dur': 21.0}]),
+    S('D15', 'button reads pressed from power-up (wiring), fast warm start', button_stuck=True, chat_load=8),
     S('D14', 'hold 2.5 s while it thinks (blue): start the mode over',
       events=[{'at': 'gen_start', 'delay': 1.0, 'do': 'press', 'dur': 2.5}]),
 

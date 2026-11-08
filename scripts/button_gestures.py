@@ -56,11 +56,27 @@ class ButtonGestures:
     def _watch(self):
         down_since = None
         restarted = False
+        # Only a press that starts after the button has been seen released
+        # counts. A button that reads pressed from the start (a wiring fault,
+        # a normally-closed switch, a stuck button) would otherwise look like
+        # a 20 s hold on every start and restart the pipeline in a loop.
+        armed, warned = False, False
         while not self._stop.is_set():
             try:
                 down = bool(self._is_pressed())
             except Exception:
                 down = False
+            if not armed:
+                if down:
+                    if not warned:
+                        print(">> WARNING: the yellow button reads pressed at start-up; it is ignored "
+                              "until it reads released. Check its wiring with ./check_gpio.sh")
+                        warned = True
+                    time.sleep(POLL)
+                    continue
+                armed = True
+                if warned:
+                    print(">> The yellow button reads released now; it works from here on")
             now = time.time()
             if down:
                 if down_since is None:
@@ -74,8 +90,9 @@ class ButtonGestures:
                 held, down_since = now - down_since, None
                 self._hold_display(None)
                 if not restarted:
-                    if self._verbose:
-                        print(f"[button] {'held' if held >= HOLD_RESET else 'pressed'} {held:.1f} s")
+                    # Always logged: one line per press, so the boot log shows
+                    # what the button did.
+                    print(f">> Button {'held' if held >= HOLD_RESET else 'pressed'} {held:.1f} s")
                     self._actions.put(self._on_hold if held >= HOLD_RESET else self._on_press)
             time.sleep(POLL)
 
