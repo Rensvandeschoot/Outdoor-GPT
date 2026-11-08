@@ -38,7 +38,6 @@ setup() {
 
 # --- test overrides
 LLAMA_SERVER=$A/fake-llama-server
-LOG_DIR=$A/var
 RESTART_DELAY=1
 CPU_MAX_KHZ=
 EOF
@@ -142,6 +141,25 @@ sleep 2
 [ "$(count ' start ' "$A/agent.log")" = 1 ] && ok "agent not started again" || fail "agent was restarted after SIGTERM"
 [ "$(count ' term 8080' "$A/servers.log")" = 1 ] && [ "$(count ' term 8081' "$A/servers.log")" = 1 ] \
   && ok "both servers stopped by the script" || { fail "servers not stopped:"; cat "$A/servers.log"; }
+
+echo "4. Boot logs: one set per boot on disk, the newest BOOT_LOGS_KEEP (5) kept"
+setup bootlogs
+printf '60 0\n' > "$A/plan"
+for i in 1 2 3 4 5 6 7; do
+  rm -f "$A/agent.pid" "$A/runs"
+  start_script
+  wait_for 15 '[ -f "$A/agent.pid" ]' || fail "boot $i: agent never started"
+  kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+  wait_for 10 '! kill -0 "$SCRIPT_PID" 2>/dev/null' || fail "boot $i: script did not stop"
+done
+kept=$(ls "$A/logs/boot" | grep -c '^boot_[0-9]*\.log$')
+[ "$(cat "$A/logs/boot/last")" = 7 ] && ok "boots numbered 1..7" || fail "last boot number is $(cat "$A/logs/boot/last")"
+[ "$kept" = 5 ] && [ -f "$A/logs/boot/boot_7.log" ] && [ ! -f "$A/logs/boot/boot_2.log" ] \
+  && ok "5 boot logs kept (3..7)" || { fail "kept $kept boot logs:"; ls "$A/logs/boot"; }
+grep -q "Starting OutdoorGPT" "$A/logs/boot/boot_7.log" && ok "the script's output is in the boot log" \
+  || fail "boot_7.log lacks the script's output"
+[ -f "$A/logs/boot/boot_7_llama-server.log" ] && ok "server log of the boot kept next to it" \
+  || fail "no boot_7_llama-server.log"
 
 echo
 if [ "$FAILED" = 0 ]; then echo "All boot script checks passed."; else echo "Boot script checks FAILED."; fi

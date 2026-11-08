@@ -73,14 +73,31 @@ case $MODE in
         python voice_translate_cli.py --preload-tts --platform $PLATFORM --audio-device-input 1 --audio-device-output 0
         ;;
     3)
-        # Server logs go to LOG_DIR (config.sh may set it; default /var/log).
-        # They are emptied once per boot and appended to on every restart
-        # below, so the reason an earlier run stopped is still in them.
-        LOG_DIR=${LOG_DIR:-/var/log}
-        CHAT_LOG="$LOG_DIR/llama-server.log"
-        EMBED_LOG="$LOG_DIR/embedding-server.log"
-        : > "$CHAT_LOG"
-        : > "$EMBED_LOG"
+        # Boot logs on the SD card, in logs/boot/ of the agent directory: this
+        # script's own output with the agent's (boot_<n>.log, also still in
+        # the journal) and each server's (boot_<n>_llama-server.log,
+        # boot_<n>_embedding-server.log), appended to on every restart. On
+        # DietPi /var/log and the journal usually live in RAM (DietPi-RAMlog),
+        # so what went wrong was gone after the very power cycle that recovered the phone. Boots are
+        # numbered, not dated: off-grid the clock cannot be trusted. The
+        # newest BOOT_LOGS_KEEP (config.sh) boots are kept.
+        BOOT_LOG_DIR=logs/boot
+        mkdir -p "$BOOT_LOG_DIR"
+        BOOT_NR=$(cat "$BOOT_LOG_DIR/last" 2>/dev/null)
+        case "$BOOT_NR" in ''|*[!0-9]*) BOOT_NR=0 ;; esac
+        BOOT_NR=$(( BOOT_NR + 1 ))
+        echo "$BOOT_NR" > "$BOOT_LOG_DIR/last"
+        for f in "$BOOT_LOG_DIR"/boot_*.log; do
+            [ -e "$f" ] || continue
+            n=${f##*/boot_}
+            n=${n%%[_.]*}
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            [ "$n" -le $(( BOOT_NR - ${BOOT_LOGS_KEEP:-5} )) ] && rm -f "$f"
+        done
+        CHAT_LOG="$BOOT_LOG_DIR/boot_${BOOT_NR}_llama-server.log"
+        EMBED_LOG="$BOOT_LOG_DIR/boot_${BOOT_NR}_embedding-server.log"
+        exec > >(tee -a "$BOOT_LOG_DIR/boot_$BOOT_NR.log") 2>&1
+        echo "OutdoorGPT boot $BOOT_NR ($(date '+%Y-%m-%d %H:%M:%S'), clock not reliable off-grid)"
 
         # Conversation logs would otherwise pile up on the SD card for years;
         # keep the newest LOG_KEEP (config.sh) and drop the rest.

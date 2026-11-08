@@ -95,6 +95,12 @@ VERBOSE=0
 # keeps the newest LOG_KEEP and deletes the rest.
 LOG_KEEP=50
 
+# Boot logs (logs/boot/boot_<n>*.log): the boot script's and the agent's
+# output plus both servers', per boot, on the SD card, so the reason the
+# phone had to be restarted survives the restart. The newest BOOT_LOGS_KEEP
+# boots are kept, a few kB each.
+BOOT_LOGS_KEEP=5
+
 # Seconds the agent waits at most for each llama-server to finish loading.
 # A ceiling, not a delay: it goes on the moment the server answers, and stops
 # waiting at once when the server's process has died. The chat model loads in
