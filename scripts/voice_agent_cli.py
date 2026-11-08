@@ -233,12 +233,15 @@ def main():
             on_interrupt_agent()
 
     def switch_to_prompt(new_prompt):
+        # Called from the dial's timer and the button's callback thread. The
+        # reset itself happens in the agent's run loop between turns;
+        # request_reset only cuts the current turn short and returns.
         current_prompt['p'] = new_prompt
         if log_file:
             prompt_name = new_prompt.get('name', 'unnamed')
             log_file.write(f"\n[RESET] [PROMPT] {prompt_name}\n")
             log_file.flush()
-        va.full_reset_with_prompt(
+        va.request_reset(
             system_prompt=new_prompt['system_prompt'],
             start_message=new_prompt['start_message'],
             recipe_mode=new_prompt.get('mode') == 'recipe',
