@@ -22,7 +22,9 @@
 #     SPACE           - mute / unmute the microphone
 #     g / s / f       - prompt 1 / 2 / 3, mirroring the dial
 #
-# Exit: say "please quit" (DEFAULT_EXIT_COMMAND in voice_agent_utils.py), or Ctrl-C.
+# Exit: Ctrl-C. Stopping by voice is off by default (on the phone it would only
+# silence it until the boot script restarts it); --exit_phrase "please quit"
+# turns it on for a session at a desk, matched as whole words.
 
 import threading
 import time
@@ -100,7 +102,7 @@ def main():
 
     t1 = time.time()
     print(">> Initializing Voice Agent <<")
-    va = VoiceAgent(verbose=args.verbose)
+    va = VoiceAgent(verbose=args.verbose, exit_phrase=args.exit_phrase)
 
     # Create interaction handlers
     user_interaction_handler = get_handler(args.interaction_handler, "User Input", "blue", is_agent=False)

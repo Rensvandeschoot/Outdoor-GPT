@@ -1259,8 +1259,12 @@ class AudioToText:
 class VoiceAgent():
 
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, exit_phrase=voice_agent_utils.DEFAULT_EXIT_COMMAND):
         self.verbose = verbose
+        # Saying this (as whole words) ends run(); None or "" turns it off.
+        # The default keeps upstream's behaviour for its other front-ends;
+        # OutdoorGPT's CLI passes None unless --exit_phrase is given.
+        self.exit_phrase = exit_phrase
         # Lock to prevent concurrent language changes (causes segfault in TTS)
         self._language_change_lock = threading.Lock()
         # A mode switch or restart asked for by the dial or the button, waiting
@@ -1479,7 +1483,7 @@ class VoiceAgent():
                 self.debug_state("empty_input_continuing")
                 continue
 
-            if voice_agent_utils.DEFAULT_EXIT_COMMAND.lower() in user_input_transcribed.lower():
+            if voice_agent_utils.said_exit_phrase(user_input_transcribed, self.exit_phrase):
                 self.output_handler.assistant_printer.print(voice_agent_utils.DEFAULT_GOODBYE_MESSAGE, partial=False)
                 self.output_handler._speak_sentence(voice_agent_utils.DEFAULT_GOODBYE_MESSAGE, wait_for_completion=True)
                 break
