@@ -255,8 +255,9 @@ def main():
     # Debounce so dial sweeps don't queue multiple prompt switches, and
     # suppress repeat events for the position we already applied (mechanical
     # bounce on the rotary can keep firing after the dial has settled).
-    initial_pos = gpio_handler.get_current_position() if gpio_handler else None
-    rotary_state = {'timer': None, 'last_applied_pos': initial_pos}
+    # last_applied_pos is set by adopt_dial_position() below, once the
+    # callback is listening.
+    rotary_state = {'timer': None, 'last_applied_pos': None}
 
     def switch_to_position(rotary_pos):
         idx = ROTARY_POSITION_TO_PROMPT_INDEX.get(rotary_pos)
@@ -274,9 +275,43 @@ def main():
         rotary_state['timer'] = threading.Timer(ROTARY_SETTLE_DELAY, fire)
         rotary_state['timer'].start()
 
+    def adopt_dial_position():
+        """Start in whatever mode the dial shows now, with its callback live.
+
+        The prompt was picked from the dial right after the GPIO setup, but
+        turns only reach switch_to_position from here on, some 20 seconds
+        later on the Pi. A turn in between was lost: the phone started in
+        the old mode while the dial pointed at another, and stayed there.
+        Reading the dial again after the callback is in place closes that
+        gap: this read covers every turn before it, the callback every turn
+        after. The agent is not running yet, so nothing is said; run() opens
+        with this prompt's start message.
+        """
+        pos = gpio_handler.get_current_position()
+        idx = ROTARY_POSITION_TO_PROMPT_INDEX.get(pos)
+        if idx is None or idx >= len(prompt_selector.prompts):
+            return  # between two positions: keep the prompt picked at start-up
+        rotary_state['last_applied_pos'] = pos
+        prompt = prompt_selector.prompts[idx]
+        if prompt is current_prompt['p']:
+            return
+        current_prompt['p'] = prompt
+        print(f">> Dial turned during start-up, now at '{pos}': {prompt.get('name', 'unnamed')}")
+        if log_file:
+            log_file.write(f"[PROMPT] {prompt.get('name', 'unnamed')} (dial turned during start-up)\n")
+            log_file.flush()
+        va.configure_prompt(
+            system_prompt=prompt['system_prompt'],
+            start_message=prompt['start_message'],
+            recipe_mode=prompt.get('mode') == 'recipe',
+            rag_enabled=prompt.get('rag', True),
+            silence_seconds=silence_for(prompt),
+        )
+
     if gpio_handler:
         gpio_handler.set_position_change_callback(switch_to_position)
         print(f">> Rotary switch listener active (3 positions -> first 3 prompts)")
+        adopt_dial_position()
 
     # Setup keyboard controls via the interaction handler
     if args.enable_keyboard_control and hasattr(user_interaction_handler, 'setup_keyboard_controls'):

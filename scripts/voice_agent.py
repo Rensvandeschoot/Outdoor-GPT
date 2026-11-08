@@ -1338,6 +1338,25 @@ class VoiceAgent():
         """Check if the microphone is currently muted"""
         return self.input_handler.is_muted()
 
+    def configure_prompt(self, system_prompt=None, start_message=None, recipe_mode=None,
+                         rag_enabled=None, silence_seconds=None):
+        """Set the prompt and its per-mode settings without saying anything.
+
+        Only for use before run(): run() opens with this start message and
+        starts the history from this system prompt (output_handler.start()).
+        """
+        oh = self.output_handler
+        if system_prompt is not None:
+            oh.system_prompt = system_prompt
+        if start_message is not None:
+            oh.start_message = start_message
+        if recipe_mode is not None:
+            oh.recipe_mode = recipe_mode
+        if rag_enabled is not None:
+            oh.rag_enabled = rag_enabled
+        if silence_seconds is not None:
+            self.input_handler.end_of_utterance_duration = silence_seconds
+
     def full_reset(self):
         """Full reset - flush LLM context and restart with start message."""
         self.full_reset_with_prompt()
