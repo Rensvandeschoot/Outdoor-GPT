@@ -48,9 +48,10 @@ LED_COUNT = 3
 # 0-31. Kept low: the handset is used close up, often in the dark.
 LED_MAX_BRIGHTNESS = 8
 
-# (r, g, b) per state. "starting" and "thinking" breathe; the others are steady.
+# (r, g, b) per state. "booting", "starting" and "thinking" breathe; the others are steady.
 LED_COLOURS = {
-    'starting':  (0, 150, 120),   # turquoise: the phone is starting up
+    'booting':   (255, 210, 80),  # soft yellow, breathing: the Pi itself boots (leds.py --booting)
+    'starting':  (0, 150, 120),   # turquoise, breathing: the agent starts (loads the models)
     'listening': (0, 110, 0),     # your turn: the mic is open
     'thinking':  (0, 60, 255),    # the model is generating
     'speaking':  (255, 160, 0),   # amber: the phone is talking, so wait. Was (255, 80, 0),

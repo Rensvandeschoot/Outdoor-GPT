@@ -2,7 +2,7 @@
 #
 # On crank power the 5 V dips while the Pi boots, and the APA102 LEDs on the
 # audio HAT pick up random colours from every dip; nothing corrects them until
-# software writes them. This starts the turquoise start-up breath early in the
+# software writes them. This starts a soft yellow start-up breath early in the
 # boot (leds.py --booting); startup_script.sh stops it just before the agent
 # takes the LEDs over. It gives up by itself after three minutes.
 #
