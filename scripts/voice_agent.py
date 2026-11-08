@@ -69,12 +69,16 @@ class LLmToAudio:
                  tts_warmup=False,   # synthesise throwaway lines once the servers are up
                  tts_threads=0,      # cap Piper's onnxruntime threads; 0 = default, one per core
                  eink=None,          # EinkRecipeDisplay made by the CLI, which draws on it before this exists
+                 max_history_turns=voice_agent_utils.DEFAULT_MAX_HISTORY_TURNS,   # 0 = no turn limit
+                 max_history_chars=voice_agent_utils.DEFAULT_MAX_HISTORY_CHARS,
                  ):
         """Initialize the streamer with Piper and LLM models."""
         self.verbose = verbose
         self.single_turn = single_turn
         self.show_ttfb = show_ttfb
         self.rag_retriever = rag_retriever
+        self.max_history_turns = max_history_turns
+        self.max_history_chars = max_history_chars
         # Recipe mode: the recipe is drawn on the e-ink panel when one is
         # available, the session ends after a single recipe, and the interrupt
         # button starts the next one. Set per prompt (the "mode" key in
@@ -636,6 +640,26 @@ class LLmToAudio:
 
     
 
+    def _trim_history(self):
+        """Keep the system prompt and only the latest turns.
+
+        At most max_history_turns turns (the question just asked included)
+        and max_history_chars characters of them; the oldest go first. The
+        history then still starts with a question and ends with the newest
+        one. Without this it grew with every turn until llama-server refused
+        the request for not fitting its context, and the agent crashed.
+        """
+        head, tail = self.messages[:1], self.messages[1:]
+        if self.max_history_turns:
+            tail = tail[-(2 * self.max_history_turns - 1):]
+        while len(tail) > 1 and sum(len(m['content']) for m in tail) > self.max_history_chars:
+            tail = tail[1:]
+        while len(tail) > 1 and tail[0]['role'] != 'user':
+            tail = tail[1:]
+        if len(tail) < len(self.messages) - 1:
+            self._info(f">> history trimmed to the latest {(len(tail) + 1) // 2} turn(s)")
+        self.messages = head + tail
+
     def _piper_with_thread_cap(self, build):
         """Construct a TTS_Piper with its onnxruntime session capped to
         tts_threads threads. PiperVoice.load() takes no session options, so
@@ -703,6 +727,7 @@ class LLmToAudio:
             self.messages = [{'role': 'system', 'content': self.system_prompt}]
 
         self.messages.append({'role': 'user', 'content': user_prompt})
+        self._trim_history()
 
         # RAG: augment only the outgoing request with retrieved context; the
         # stored history keeps the plain question so context doesn't accumulate.

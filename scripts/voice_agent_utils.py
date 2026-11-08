@@ -51,6 +51,16 @@ DEFAULT_LANGUAGE = "en"
 DEFAULT_SYSTEM_PROMPT = "Start each response with a brief, varied acknowledgment (e.g., 'Sure!', 'Hmm...', 'Ah!', 'Right!', 'Not really', 'OK so...', 'Let's see...'). Be skeptical and push back if you disagree. Never repeat the same opener twice in a row. Then give your concise answer of maximum one sentence."
 
 DEFAULT_START_MESSAGE = "Ask me anything!"
+
+# Conversation history kept for the model: the system prompt plus at most
+# this many of the latest turns (question + answer), and at most this many
+# characters of them. Without a limit the history grows with every turn
+# until llama-server refuses the request (context 4096, CHAT_CONTEXT in
+# config.sh), which ended the conversation after some 35 questions. 6000
+# characters is ~1500-1700 tokens: with the longest system prompt and a
+# full RAG block on top, that still leaves the model room to answer.
+DEFAULT_MAX_HISTORY_TURNS = 8
+DEFAULT_MAX_HISTORY_CHARS = 6000
 DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
 DEFAULT_EXIT_COMMAND = "please quit"
 
@@ -204,6 +214,7 @@ def get_cli_argument_parser():
     parser.add_argument("--speaking_rate", type=float, default=1.0, help="how fast should generated speech be, 1.0 is default, higher numbers mean faster speech")
     parser.add_argument("--max_words_to_speak_start", type=int, default=10, help="maximum number of words to speech onset after a prompt; reduce if latency too high.")
     parser.add_argument("--max_words_to_speak", type=int, default=25, help="always produce speech after this many words were produced ignoring sentence boundaries.")        
+    parser.add_argument("--max_history_turns", type=int, default=DEFAULT_MAX_HISTORY_TURNS, help="Keep at most this many of the latest turns (question + answer) in the conversation sent to the model; older ones are dropped so the context window never overflows. 0 = no turn limit (the character limit still applies).")
     parser.add_argument("--system_prompt", default=DEFAULT_SYSTEM_PROMPT, help="Instructions for the model.")
     parser.add_argument("--start_message", default=DEFAULT_START_MESSAGE, help="Opening sentence.")
     parser.add_argument("--prompt_file", type=str, default=None, help="JSON file with prompt pairs. Format: [{\"system_prompt\": \"...\", \"start_message\": \"...\"}]. Overrides --system_prompt and --start_message.")

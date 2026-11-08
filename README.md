@@ -219,6 +219,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `TTS_WARMUP` | `1` | Synthesise a few throwaway lines during start-up, after both servers are up, so the first real sentence does not also carry onnxruntime's one-off setup cost |
 | `ASR_THREADS` | `2` | Same cap for Moonshine, the speech recogniser, which otherwise makes every utterance you speak a four-core spike. `0` keeps the default |
 | `SILENCE_SECONDS` | `0.7` | How long the phone waits after you stop talking before it answers. This is the default; a prompt can set its own `silence_seconds` in `prompts.json` (see below). Every reply is delayed by this amount, so keep it as low as the pauses allow |
+| `HISTORY_TURNS` | `8` | How many of the latest turns (question and answer) the model sees. Older ones are dropped (the agent also caps the history at 6000 characters), so a long conversation never outgrows `CHAT_CONTEXT`: without a limit the server refused the request after some 35 questions. `0` = no turn limit |
 | `VERBOSE` | `0` | Set to `1` to run the agent with `--verbose` at boot, logging the retrieved chunks to the journal. See [Testing & tuning](#testing--tuning) |
 
 `config.sh` is version-controlled with this Pi's real values, so the copy step in Step 4 intentionally overwrites the Pi's copy. That means a temporary change made directly on the Pi — flipping `VERBOSE` to `1`, say — is reset the next time you copy the scripts over. 

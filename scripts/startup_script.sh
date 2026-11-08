@@ -135,7 +135,7 @@ case $MODE in
             # python -u: unbuffered output, so journal timestamps mark the moment a
             # line was printed rather than the moment a buffer happened to flush.
             STARTED=$SECONDS
-            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} $VERBOSE_FLAG $SPEECH_FLAGS
+            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} $VERBOSE_FLAG $SPEECH_FLAGS
             RC=$?
             RAN=$(( SECONDS - STARTED ))
             [ "$RAN" -ge 120 ] && DELAY=${RESTART_DELAY:-3}

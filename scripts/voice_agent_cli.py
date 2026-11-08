@@ -151,6 +151,7 @@ def main():
         tts_model_path=args.tts_model_path,
         max_words_to_speak_start=args.max_words_to_speak_start,
         max_words_to_speak=args.max_words_to_speak,
+        max_history_turns=args.max_history_turns,
         split_on_punctuation=False,
         verbose=args.verbose,
         single_turn=False,  # Conversational agent keeps history

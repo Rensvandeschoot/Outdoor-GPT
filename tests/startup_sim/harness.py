@@ -426,7 +426,8 @@ def boot_argv(c):
             '--speaking_rate', c.get('SPEAKING_RATE', '1.'),
             '--end_of_utterance_duration', c.get('SILENCE_SECONDS', '0.7'),
             '--prompt_file', PROMPTS,
-            '--rag_index', c.get('RAG_INDEX', 'rag_index')]
+            '--rag_index', c.get('RAG_INDEX', 'rag_index'),
+            '--max_history_turns', c.get('HISTORY_TURNS', '8')]
     if c.get('VERBOSE') == '1':
         argv.append('--verbose')
     if c.get('TTS_WARMUP') == '1':
