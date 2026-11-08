@@ -325,9 +325,11 @@ def main():
     def on_button_press():
         """Short press: stop the agent talking or thinking; in recipes, start
         a fresh recipe session."""
-        # Every press puts the instruction card back on the screen: the button
-        # means "start over", and the card is what a newcomer needs to see.
-        eink.render_image_async()
+        # No instruction card here (only at start-up and on the 2 s hold): a
+        # redraw holds the SPI bus shared with the LEDs for ~7 s, so the
+        # lights froze after every press, just when they should show what
+        # the press did. In recipes the last recipe stays up until the next
+        # one is drawn.
         oh = va.output_handler
         # Recipe mode delivers one recipe and then stops listening, so there is
         # nothing to interrupt. Restart the same mode instead: cleared context
@@ -346,7 +348,8 @@ def main():
 
     def on_button_hold():
         """Held 2 s: start this mode over, its opening line and a cleared
-        conversation; in recipes that is a new recipe."""
+        conversation; in recipes that is a new recipe. The instruction card
+        goes back on the screen: starting over is what a newcomer does."""
         eink.render_image_async()
         switch_to_prompt(current_prompt['p'])
 

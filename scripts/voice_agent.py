@@ -1445,9 +1445,9 @@ class VoiceAgent():
             time.sleep(0.05)
 
         # The panel is deliberately not touched: it is bistable, so the last
-        # recipe stays readable after turning the dial away from recipes. The
-        # button is different: the CLI draws the instruction card on every
-        # press before it asks for a reset.
+        # recipe stays readable after turning the dial away from recipes.
+        # Holding the button 2 s is different: the CLI draws the instruction
+        # card before it asks for the reset.
         if recipe_mode is not None:
             oh.recipe_mode = recipe_mode
         if rag_enabled is not None:
@@ -1640,8 +1640,8 @@ class VoiceAgent():
 
         # Switch recipe mode with the prompt. The panel is deliberately not
         # touched here: it is bistable, so the last recipe stays readable after
-        # turning the dial away from recipes. The button is different: the CLI
-        # draws the instruction card on every press before it gets here.
+        # turning the dial away from recipes. Holding the button 2 s is different:
+        # the CLI draws the instruction card before it asks for the reset.
         if recipe_mode is not None and hasattr(self, 'output_handler'):
             self.output_handler.recipe_mode = recipe_mode
         if rag_enabled is not None and hasattr(self, 'output_handler'):
