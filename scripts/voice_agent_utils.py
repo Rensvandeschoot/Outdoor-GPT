@@ -62,6 +62,12 @@ DEFAULT_START_MESSAGE = "Ask me anything!"
 DEFAULT_MAX_HISTORY_TURNS = 8
 DEFAULT_MAX_HISTORY_CHARS = 6000
 DEFAULT_GOODBYE_MESSAGE = "Goodbye!"
+
+# Spoken when a turn fails (the model server refused or dropped the
+# request). With the server still there the phone carries on; without it the
+# agent exits and the boot script restarts the servers and the agent.
+TURN_FAILED_MESSAGE = "Sorry, something went wrong there. Please ask again."
+TURN_FAILED_RESTART_MESSAGE = "Sorry, I have to restart. Give me half a minute."
 DEFAULT_EXIT_COMMAND = "please quit"
 
 # Recipe mode. The model prefixes a finished recipe with this marker, which

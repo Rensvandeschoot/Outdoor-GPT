@@ -1490,10 +1490,40 @@ class VoiceAgent():
                 # Mute mic while agent is speaking to prevent echo/feedback
                 self.mute_microphone()
                 self.debug_state("before_process_prompt")
-                self.output_handler.process_prompt(user_input_transcribed)
+                try:
+                    self.output_handler.process_prompt(user_input_transcribed)
+                except Exception as e:
+                    self._recover_from_failed_turn(e)
                 self.debug_state("after_process_prompt")
                 # Note: Don't unmute here - get_speech_input() handles it via stream_lock
                 # This ensures we wait for interrupt callback's audio drain before starting mic    
+
+    def _recover_from_failed_turn(self, error):
+        """A turn raised: say so, and go on if the model server is still there.
+
+        One refused or dropped request used to end the agent, and with it
+        the phone. Now the unanswered question is dropped from the history
+        (so it stays question/answer), the phone apologises, and the next
+        question is a fresh turn. If the chat server itself is gone there is
+        nothing to gain by staying up: the error is raised again, the agent
+        exits, and the boot script restarts the servers and the agent.
+        """
+        print(f"[VoiceAgent] Turn failed: {type(error).__name__}: {error}")
+        oh = self.output_handler
+        oh.is_generating = False
+        if len(oh.messages) > 1 and oh.messages[-1]['role'] == 'user':
+            oh.messages.pop()
+        if oh.is_speaking or oh.is_processing:
+            oh.interrupt()
+        try:
+            server_up = oh.llm_client.health()
+        except Exception:
+            server_up = False
+        if not server_up:
+            print("[VoiceAgent] Chat server unreachable; exiting so the boot script restarts everything")
+            oh._say(voice_agent_utils.TURN_FAILED_RESTART_MESSAGE)
+            raise error
+        oh._say(voice_agent_utils.TURN_FAILED_MESSAGE)
 
     def trigger_stop_events(self):
         self.input_handler.stop_event.set()
