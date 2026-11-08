@@ -9,6 +9,12 @@
 # Note: the agent directory itself is NOT configured here (this file lives
 # inside it). It is set at the top of startup_script.sh.
 
+# What the boot script starts: 1 = the stock voice agent, 2 = translation
+# (both as CrankGPT shipped them, using upstream's own start scripts),
+# 3 = OutdoorGPT, the agent with RAG. Without this line the boot script
+# starts 3.
+MODE=3
+
 # Absolute path to the llama.cpp server binary.
 # Must be absolute: at boot the DietPi autostart service runs with a minimal
 # PATH that does not include custom build directories.

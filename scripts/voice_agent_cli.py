@@ -163,7 +163,7 @@ def main():
 
     # Now the heavy imports, with the LEDs breathing and the card going up.
     from voice_agent import VoiceAgent
-    from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper, create_conversation_log_file
+    from voice_agent_interaction_handlers import get_handler, LoggingHandlerWrapper
     print(f">> -- All imports done in {time.time() - start_time:.2f} seconds -- <<")
 
     voice_agent_utils.apply_audio_device_settings(args)
@@ -210,7 +210,7 @@ def main():
     # Wrap with logging if requested
     log_file = None
     if args.log_conversation:  # argparse converts --log-conversation to log_conversation
-        log_file = create_conversation_log_file()
+        log_file = voice_agent_utils.open_conversation_log()  # named by boot, never overwritten
         user_interaction_handler = LoggingHandlerWrapper(user_interaction_handler, log_file, "USER")
         agent_interaction_handler = LoggingHandlerWrapper(agent_interaction_handler, log_file, "AGENT")
         # Log initial prompt name

@@ -6,7 +6,7 @@
 # This is the CrankGPT DIY startup script
 # (https://github.com/squeezlabs/crankgpt_diy/blob/main/dietpi/startup_script.sh)
 # with a third mode added: OutdoorGPT, i.e. the voice agent plus RAG over the
-# document collection. Set MODE below and reboot.
+# document collection. Set MODE in config.sh and reboot.
 #
 # IMPORTANT: the "#!" above must stay on the very first line. A blank line in
 # front of it makes systemd fail with "Exec format error" and nothing starts.
@@ -24,8 +24,10 @@ cd "$AGENT_DIR" || exit 1
 [ -f ./config.sh ] && . ./config.sh
 source "${VENV:-venv}/bin/activate" || exit 1
 
-# Mode: 1 = Voice Agent, 2 = Translation, 3 = OutdoorGPT (agent + RAG)
-MODE=3
+# 1 = Voice Agent, 2 = Translation, 3 = OutdoorGPT (agent + RAG). Set in
+# config.sh; without it (no config.sh, or one from before MODE moved there)
+# the phone starts as OutdoorGPT, as it always has.
+MODE=${MODE:-3}
 
 # Platform: rpi5 or opi5
 PLATFORM=${PLATFORM:-rpi5}
@@ -119,8 +121,12 @@ case $MODE in
         echo "OutdoorGPT boot $BOOT_NR ($(date '+%Y-%m-%d %H:%M:%S'), clock not reliable off-grid)"
 
         # Conversation logs would otherwise pile up on the SD card for years;
-        # keep the newest LOG_KEEP (config.sh) and drop the rest.
-        ls -t logs/conversation_*.txt 2>/dev/null | tail -n +$(( ${LOG_KEEP:-50} + 1 )) | xargs -r rm -f
+        # keep the newest LOG_KEEP (config.sh) and drop the rest. Newest by
+        # name, not by time: the agent names them conversation_b<boot>_...
+        # (zero-padded), while file times follow a clock that off-grid can go
+        # back after a power cut. Older names without a boot number sort
+        # first and go first.
+        ls logs/conversation_*.txt 2>/dev/null | LC_ALL=C sort | head -n -${LOG_KEEP:-50} | xargs -r rm -f
 
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""
@@ -186,12 +192,14 @@ case $MODE in
             # load, and it stops waiting at once when that process has died.
             # python -u: unbuffered output, so journal timestamps mark the moment a
             # line was printed rather than the moment a buffer happened to flush.
+            # The server addresses come from the same CHAT_PORT / EMBED_PORT the
+            # servers were started on, so changing a port in config.sh moves both.
             STARTED=$SECONDS
             # OUTDOORGPT_FAILED_STARTS: after an error the start-up breath
             # shows red (leds.py), calmly blinking once 3 runs failed in a row.
-            OUTDOORGPT_FAILED_STARTS=$FAILED \
+            OUTDOORGPT_FAILED_STARTS=$FAILED OUTDOORGPT_BOOT_NR=$BOOT_NR \
             OUTDOORGPT_CHAT_PID=$CHAT_PID OUTDOORGPT_EMBED_PID=$EMBED_PID \
-            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS 9>&-
+            python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --llm_server_url http://localhost:${CHAT_PORT:-8080}/v1 --embedding_server_url http://localhost:${EMBED_PORT:-8081}/v1 --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS 9>&-
             RC=$?
             RAN=$(( SECONDS - STARTED ))
             # 4: a server process runs but never became ready (see

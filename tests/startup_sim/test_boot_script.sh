@@ -58,7 +58,8 @@ case "$*" in
 esac
 n=$(( $(cat runs 2>/dev/null || echo 0) + 1 )); echo "$n" > runs
 echo "$$" > agent.pid
-echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-}" >> agent.log
+echo "$*" > args.log
+echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-} boot=${OUTDOORGPT_BOOT_NR:-}" >> agent.log
 line=$(sed -n "${n}p" plan 2>/dev/null); [ -z "$line" ] && line="999 0"
 set -- $line
 trap 'echo "$(date +%s.%N) term $n" >> agent.log; exit 0' TERM INT
@@ -117,6 +118,8 @@ fi
   || { fail "servers started more than once:"; cat "$A/servers.log"; }
 grep -q "OutdoorGPT stopped (exit code 1" "$A/script.out" && ok "each stop is logged with its exit code" \
   || fail "no 'OutdoorGPT stopped' line in the output"
+grep -q -- "--llm_server_url http://localhost:8080/v1 --embedding_server_url http://localhost:8081/v1" "$A/args.log" \
+  && ok "the agent gets the server addresses from CHAT_PORT / EMBED_PORT" || { fail "server addresses:"; cat "$A/args.log"; }
 
 echo "2. The chat server dies: it is started again before the agent"
 setup server
@@ -203,7 +206,34 @@ wait_for 40 '[ "$(count " start 4" "$A/agent.log")" = 1 ]' || fail "no fourth ru
   || fail "counted: $(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")"
 kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
 
-echo "7. A second copy of the script is refused while the first runs"
+echo "7a. Conversation logs: the newest LOG_KEEP (50) by name, old clock-only names first"
+setup convlogs
+mkdir -p "$A/logs"
+for i in 1 2 3; do touch "$A/logs/conversation_2026010${i}_120000.txt"; done
+for i in $(seq 1 52); do touch "$A/logs/conversation_b$(printf %05d $i)_20260101_120000.txt"; done
+# File times backwards, as after a clock that went back: must not matter.
+touch -d '2030-01-01' "$A/logs/conversation_b00001_20260101_120000.txt"
+printf '60 0\n' > "$A/plan"
+start_script
+wait_for 15 '[ -f "$A/agent.pid" ]' || fail "agent never started"
+kept=$(ls "$A/logs" | grep -c '^conversation_')
+[ "$kept" = 50 ] && [ ! -e "$A/logs/conversation_20260103_120000.txt" ] && [ -e "$A/logs/conversation_b00052_20260101_120000.txt" ] \
+  && [ ! -e "$A/logs/conversation_b00001_20260101_120000.txt" ] && [ ! -e "$A/logs/conversation_b00002_20260101_120000.txt" ] \
+  && ok "50 kept: clock-only names and the lowest boot numbers removed, whatever the file times" \
+  || { fail "kept $kept:"; ls "$A/logs"; }
+grep -q "boot=1$" "$A/agent.log" && ok "the agent gets the boot number" || { fail "boot number:"; cat "$A/agent.log"; }
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+
+echo "7. A config.sh without MODE still starts OutdoorGPT (mode 3)"
+setup nomode
+sed -i '/^MODE=/d' "$A/config.sh"
+printf '60 0\n' > "$A/plan"
+start_script
+wait_for 15 '[ -f "$A/agent.pid" ]' && grep -q -- "--rag_index" "$A/args.log" \
+  && ok "mode 3 started: the agent runs with --rag_index" || fail "no mode-3 agent without MODE in config.sh"
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid" 2>/dev/null)" 2>/dev/null
+
+echo "8. A second copy of the script is refused while the first runs"
 if command -v flock >/dev/null 2>&1; then
   setup second
   printf '60 0\n' > "$A/plan"

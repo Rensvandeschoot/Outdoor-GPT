@@ -208,9 +208,9 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `CHAT_MODEL` / `CHAT_CONTEXT` | LFM2.5-1.2B, 4096 | Context must hold the retrieved chunks plus the conversation |
 | `EMBED_MODEL` | all-MiniLM-L6-v2 | Must be the same model the index was built with |
 | `RAG_INDEX` | `rag_index` | Where the index lives |
-| `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | |
+| `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | The servers listen on these, and the boot script hands the agent the same addresses, so a change here moves both |
 | `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
-| `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
+| `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years. They are named `conversation_b<boot>_<date_time>.txt` and kept by boot number, not by file time: off-grid the clock can go back after a power cut, and a name is never reused |
 | `BOOT_LOGS_KEEP` | `5` | Boots whose logs are kept in `logs/boot/` (script, agent and both servers), so the reason for a restart survives it; see [Troubleshooting the boot](#troubleshooting-the-boot) |
 | `RESTART_DELAY` | `3` | Seconds before the boot script starts the agent again after it stopped. Doubles on every stop in a row, up to a minute; see [Step 6](#step-6--off-grid-start-everything-at-boot) |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
@@ -269,7 +269,7 @@ Inside the phone there are no terminals: everything must start by itself when th
 | 2 | Translation agent (unchanged) |
 | **3** | **OutdoorGPT: chat LLM (context 4096) + embedding server + agent with `--rag_index`** |
 
-Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, both servers logging to `logs/boot/`) plus the RAG flags on the agent. What it changes is the CPU: modes 1 and 2 keep CrankGPT's `performance` governor, while mode 3 applies `GOVERNOR` and `CPU_MAX_KHZ` from `config.sh` so the phone neither idles at full clock nor spikes to it, passes the `TTS_*` settings through to the agent, and runs it with `python -u` so journal timestamps are real. The measurements behind those defaults are under [Crank power](#crank-power). Switching modes is editing one line and rebooting, so you can always fall back to the stock phone.
+Mode 3 keeps everything the other modes do — `--platform rpi5`, `--audio-device-input 1 --audio-device-output 0`, `--speaking_rate 1.`, `--log-conversation` — and adds the embedding server (backgrounded, both servers logging to `logs/boot/`) plus the RAG flags on the agent. What it changes is the CPU: modes 1 and 2 keep CrankGPT's `performance` governor, while mode 3 applies `GOVERNOR` and `CPU_MAX_KHZ` from `config.sh` so the phone neither idles at full clock nor spikes to it, passes the `TTS_*` settings through to the agent, and runs it with `python -u` so journal timestamps are real. The measurements behind those defaults are under [Crank power](#crank-power). Switching modes is editing `MODE` in `config.sh` and rebooting (without that line the script starts mode 3), so you can always fall back to the stock phone.
 
 DietPi must be set to run the custom script in the first place. Check with:
 
@@ -317,7 +317,7 @@ Measured on this Pi, roughly 32 seconds from power to picking up the handset:
 | RAG index load | 1.5 s | 8082 chunks; cheap enough to leave alone |
 | Piper TTS | 2.7 s | |
 | Waiting for the chat server | 3.0 s | |
-| LLM warmup | 4.0 s | makes the first answer fast |
+| LLM warmup | 4.0 s | makes the first answer fast; since then reduced to one token (`max_tokens=1`), which keeps that effect and should take about a second (not yet measured) |
 
 The chat model itself takes ~21 s to load from the SD card, but that happens in parallel with the agent's own startup, so it is not on the critical path — faster storage would not currently help.
 
@@ -407,7 +407,7 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 
 Green and amber are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
 
-The lights come on before the models load: the CLI starts them, and the GPIO, ahead of its heavy imports, so the phone breathes turquoise from about half a second into the start-up instead of staying dark until it can talk. Only the kernel's first seconds stay dark. While the instruction card is being drawn the breath holds still for a few seconds: the panel and the LEDs share the SPI bus.
+The lights come on before the models load: the CLI starts them, and the GPIO, ahead of its heavy imports, so the phone breathes turquoise from about half a second into the start-up instead of staying dark until it can talk. Only the kernel's first seconds stay dark. While the instruction card is being drawn the breath holds still for a few seconds: the panel and the LEDs share the SPI bus. The APA102s have no chip select, so whatever passes on that bus (the panel's own data, noise from the crank, a dip in the 5 V) can leave them showing random colours; the agent therefore sends its frame again five times a second even when it has not changed, so stray colours last a fraction of a second once it can write. Before the agent runs (the kernel's boot) and while the card is drawn, nothing can correct them.
 
 The blue window is driven by `is_generating`, a flag added for this. The handler's existing `is_processing` looks like the obvious signal but is not: it only turns on once a sentence is ready to be spoken, so the thinking pause falls entirely outside it and the light would sit on green while the model was already working. `is_processing` is instead read as speaking, because it stays up between sentences while `is_speaking` briefly drops, and reading it as thinking would flick the light blue mid-answer.
 
@@ -480,7 +480,7 @@ Symptoms we have actually hit, and what they mean:
 | ------- | ----- | --- |
 | Nothing starts at boot, but running the script's lines by hand works | The shebang is not on line 1 of `custom.sh` (`journalctl` shows `Exec format error`) | Copy `startup_script.sh` over it instead of hand-editing |
 | Servers refuse to start only at boot, fine from a shell | `LLAMA_SERVER` not set to an absolute path; the boot service has a minimal `PATH` | Set the absolute path in `config.sh` |
-| Phone answers, but never uses the documents | `MODE` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` and reboot |
+| Phone answers, but never uses the documents | `MODE` in `config.sh` is not 3, so the agent runs without `--rag_index` | Set `MODE=3` in `config.sh` and reboot |
 | Agent exits at startup complaining it cannot reach a server | A model file named in `config.sh` does not exist, so that server died immediately | Check the server logs of that boot in `logs/boot/` (`boot_<n>_llama-server.log`, `boot_<n>_embedding-server.log`) |
 | The phone goes quiet, then starts over with its opening line | The agent stopped and the boot script restarted it | `journalctl -u dietpi-autostart_custom.service -b \| grep -B20 "OutdoorGPT stopped"` shows the error just before the restart |
 | The autostart script never runs at all | `/boot/dietpi/.dietpi-autostart_index` is not `14` | Set it with `dietpi-autostart` |

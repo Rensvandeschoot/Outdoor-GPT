@@ -58,7 +58,9 @@ class _Completions:
         n_ctx = W.cfg.get('n_ctx', 4096)
         prompt_tokens = sum(_tok(m['content']) + 6 for m in msgs)
         if not stream:
-            S.sleep(W.jit(4.0, 'llm_warmup'))
+            # The warm-up: the README's 4.0 s for a whole short reply; the
+            # first token alone (prefill + one step) takes about a quarter.
+            S.sleep(W.jit(1.0 if extra.get('max_tokens') == 1 else 4.0, 'llm_warmup'))
             return NS(choices=[NS(message=NS(content='Hello!'))])
         rec = {'t': round(S.now(), 2), 'mode': mode_of(msgs[0]['content']), 'tokens': prompt_tokens,
                'roles': [m['role'] for m in msgs],
