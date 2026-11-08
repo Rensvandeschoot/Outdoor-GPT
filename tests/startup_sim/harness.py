@@ -248,6 +248,8 @@ def check(pending):
     for t, line in W.stdout:
         if 'using random prompt' in line:
             flag('RANDOM_PROMPT', f'{t:.1f}s: {line}')
+        if 'no rotary position detected' in line:
+            flag('NO_DIAL_POSITION', f'{t:.1f}s: {line}')
     lost = [(t, d) for t, k, d in W.events if k == 'gpio_edge_lost']
     lost_dial = [(t, d) for t, d in lost if d['pin'] != S.PIN_BUTTON and d['edge'] == 'press']
     lost_btn = [(t, d) for t, d in lost if d['pin'] == S.PIN_BUTTON and d['edge'] == 'release']

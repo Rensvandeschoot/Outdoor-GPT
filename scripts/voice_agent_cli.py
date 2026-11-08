@@ -82,7 +82,7 @@ def main():
     eink = EinkRecipeDisplay(verbose=args.verbose)
     eink.render_image_async()
 
-    # Pick initial prompt: from rotary dial if available, else random
+    # Pick initial prompt: from the rotary dial; without GPIO (a PC), random
     initial_prompt = None
     if gpio_handler:
         rotary_pos = gpio_handler.get_current_position()
@@ -91,7 +91,13 @@ def main():
             initial_prompt = prompt_selector.prompts[idx]
             print(f">> Initial prompt from rotary dial position '{rotary_pos}': {initial_prompt.get('name', 'unnamed')}")
         else:
-            print(f">> No valid rotary position detected (got {rotary_pos!r}), using random prompt")
+            # The dial rests between two positions, or a wire is loose. A
+            # random pick made the phone start differently on every boot;
+            # position 1 at least is the same every time. If the dial settles
+            # before the phone is ready, adopt_dial_position() takes it over.
+            initial_prompt = prompt_selector.prompts[0]
+            print(f">> WARNING: no rotary position detected (got {rotary_pos!r}): between two "
+                  f"positions, or a loose wire? Starting in position 1: {initial_prompt.get('name', 'unnamed')}")
     if initial_prompt is None:
         initial_prompt = prompt_selector.get_random_prompt()
 
