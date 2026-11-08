@@ -47,6 +47,7 @@ LEGEND = {
     'CONTEXT_POLLUTED': 'a request to the model had a broken history (wrong roles or another mode\'s answer)',
     'BOGUS_RECIPE_SCREEN': 'a non-recipe answer was drawn on the e-ink panel as the recipe',
     'BOGUS_RECIPE_STATE': 'recipe mode marked "delivered" (purple, deaf) without a confirmed ingredient list',
+    'MIC_OPEN_WHILE_SPEAKING': 'the microphone was open while the speaker played (more than 0.3 s)',
     'ECHO_HEARD': 'the microphone transcribed the agent\'s own voice',
     'ECHO_AS_INPUT': 'the agent\'s own voice was sent to the model as a question',
     'CONTEXT_OVERFLOW': 'the server refused a request that no longer fit the context window',

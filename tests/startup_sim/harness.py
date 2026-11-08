@@ -398,6 +398,20 @@ def check(pending):
                 flag('BUTTON_IGNORED_SPEECH', f'{up:.1f}s press while speaking: the answer went on at '
                                               f"{later[0]['start']:.1f}s")
 
+    # The microphone open while the speaker plays: the agent hears itself
+    # (speech recognition on its own voice costs crank power, and it can end
+    # up asking itself a question).
+    both, start = 0.0, None
+    for t, snap in trace:
+        bad = snap.get('mic') and snap.get('playing')
+        if bad and start is None:
+            start = t
+        if not bad and start is not None:
+            both = max(both, t - start)
+            start = None
+    if both > 0.3:
+        flag('MIC_OPEN_WHILE_SPEAKING', f'the microphone was open while the speaker played, for {both:.1f}s')
+
     # LED says "your turn" while the microphone is off
     deaf, start = 0.0, None
     for t, snap in trace:
