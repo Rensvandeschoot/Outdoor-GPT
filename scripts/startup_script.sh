@@ -121,8 +121,12 @@ case $MODE in
         echo "OutdoorGPT boot $BOOT_NR ($(date '+%Y-%m-%d %H:%M:%S'), clock not reliable off-grid)"
 
         # Conversation logs would otherwise pile up on the SD card for years;
-        # keep the newest LOG_KEEP (config.sh) and drop the rest.
-        ls -t logs/conversation_*.txt 2>/dev/null | tail -n +$(( ${LOG_KEEP:-50} + 1 )) | xargs -r rm -f
+        # keep the newest LOG_KEEP (config.sh) and drop the rest. Newest by
+        # name, not by time: the agent names them conversation_b<boot>_...
+        # (zero-padded), while file times follow a clock that off-grid can go
+        # back after a power cut. Older names without a boot number sort
+        # first and go first.
+        ls logs/conversation_*.txt 2>/dev/null | LC_ALL=C sort | head -n -${LOG_KEEP:-50} | xargs -r rm -f
 
         # VERBOSE=1 in config.sh logs the retrieved chunks for every question.
         VERBOSE_FLAG=""
@@ -193,7 +197,7 @@ case $MODE in
             STARTED=$SECONDS
             # OUTDOORGPT_FAILED_STARTS: after an error the start-up breath
             # shows red (leds.py), calmly blinking once 3 runs failed in a row.
-            OUTDOORGPT_FAILED_STARTS=$FAILED \
+            OUTDOORGPT_FAILED_STARTS=$FAILED OUTDOORGPT_BOOT_NR=$BOOT_NR \
             OUTDOORGPT_CHAT_PID=$CHAT_PID OUTDOORGPT_EMBED_PID=$EMBED_PID \
             python -u voice_agent_cli.py --platform $PLATFORM --log-conversation --audio-device-input ${AUDIO_IN:-1} --audio-device-output ${AUDIO_OUT:-0} --speaking_rate ${SPEAKING_RATE:-1.} --end_of_utterance_duration ${SILENCE_SECONDS:-0.7} --prompt_file prompts.json --rag_index ${RAG_INDEX:-rag_index} --llm_server_url http://localhost:${CHAT_PORT:-8080}/v1 --embedding_server_url http://localhost:${EMBED_PORT:-8081}/v1 --max_history_turns ${HISTORY_TURNS:-8} --server_wait ${SERVER_WAIT:-90} $VERBOSE_FLAG $SPEECH_FLAGS 9>&-
             RC=$?

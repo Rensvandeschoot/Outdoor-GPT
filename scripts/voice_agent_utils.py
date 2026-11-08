@@ -42,6 +42,38 @@ def pid_alive(pid):
     return stat.rsplit(')', 1)[-1].split()[0] not in ('Z', 'X')
 
 
+def open_conversation_log(log_dir="logs"):
+    """Open a new conversation log; never overwrite an old one.
+
+    Upstream names the file after the clock alone and opens it for writing.
+    Off-grid the clock cannot be trusted: after a power cut it can start again
+    from the same saved time, so a later boot could take the same name and
+    overwrite the earlier conversation. The name now leads with the boot
+    number the boot script hands over (OUTDOORGPT_BOOT_NR), zero-padded, so
+    sorting the names sorts by boot, which is how the boot script keeps the
+    newest LOG_KEEP. A name that exists anyway gets a suffix. Run by hand,
+    without a boot number, the name is upstream's.
+    """
+    from datetime import datetime
+    os.makedirs(log_dir, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    boot = os.environ.get('OUTDOORGPT_BOOT_NR', '')
+    base = f"conversation_b{int(boot):05d}_{stamp}" if boot.isdigit() else f"conversation_{stamp}"
+    for n in range(1000):
+        path = os.path.join(log_dir, base + (f"_{n}" if n else "") + ".txt")
+        try:
+            log_file = open(path, "x", encoding="utf-8")
+        except FileExistsError:
+            continue
+        log_file.write(f"Conversation started at {datetime.now():%Y-%m-%d %H:%M:%S}"
+                       f"{f' (boot {int(boot)}; the clock is not reliable off-grid)' if boot.isdigit() else ''}\n")
+        log_file.write("-" * 50 + "\n")
+        log_file.flush()
+        print(f">> Logging conversation to: {path}")
+        return log_file
+    raise RuntimeError(f"no free conversation log name for {base} in {log_dir}")
+
+
 def env_pid(name):
     """A PID handed over by the boot script in environment variable name."""
     try:

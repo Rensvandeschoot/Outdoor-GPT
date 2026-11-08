@@ -35,6 +35,9 @@ else:
     SCRIPTS, PROMPTS = os.path.join(REPO, 'scripts'), os.path.join(REPO, 'prompts.json')
     sys.dont_write_bytecode = True      # never leave __pycache__ in the repo
 sys.path[:0] = [FAKES, UPSTREAM, SCRIPTS]
+# Each run in its own working directory: the agent writes logs/ there.
+import tempfile  # noqa: E402
+os.chdir(tempfile.mkdtemp(prefix='run_', dir=ROOT if ROOT else None))
 sys.setswitchinterval(0.0005)
 
 import simworld as S  # noqa: E402
@@ -514,6 +517,7 @@ sys.argv = boot_argv(read_config_sh(os.path.join(SCRIPTS, 'config.sh')))
 os.environ['OUTDOORGPT_CHAT_PID'] = str(S.CHAT_PID)
 os.environ['OUTDOORGPT_EMBED_PID'] = str(S.EMBED_PID)
 os.environ['OUTDOORGPT_FAILED_STARTS'] = str(CFG.get('failed_starts', 0))
+os.environ['OUTDOORGPT_BOOT_NR'] = str(CFG.get('boot_nr', 7))
 
 def watchdog():
     while S.now() < CFG['end'] + 40:
@@ -533,6 +537,29 @@ if CFG.get('user') is not None:
 def patch_voice_agent_utils(m):
     if hasattr(m, 'pid_alive'):
         m.pid_alive = W.server_alive
+    if hasattr(m, 'open_conversation_log'):
+        # The real file, and a copy of every line for the oracles (ECHO_HEARD).
+        real_open = m.open_conversation_log
+
+        def open_and_copy(*a, **k):
+            f = real_open(*a, **k)
+            W.conversation_log_path = f.name
+            copy = W.new_convlog()
+
+            class Tee:
+                name = f.name
+
+                def write(self, s):
+                    copy.write(s)
+                    return f.write(s)
+
+                def flush(self):
+                    f.flush()
+
+                def close(self):
+                    f.close()
+            return Tee()
+        m.open_conversation_log = open_and_copy
 
 
 def patch_voice_agent(voice_agent):

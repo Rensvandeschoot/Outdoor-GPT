@@ -59,7 +59,7 @@ esac
 n=$(( $(cat runs 2>/dev/null || echo 0) + 1 )); echo "$n" > runs
 echo "$$" > agent.pid
 echo "$*" > args.log
-echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-}" >> agent.log
+echo "$(date +%s.%N) start $n failed=${OUTDOORGPT_FAILED_STARTS:-} chat=${OUTDOORGPT_CHAT_PID:-} boot=${OUTDOORGPT_BOOT_NR:-}" >> agent.log
 line=$(sed -n "${n}p" plan 2>/dev/null); [ -z "$line" ] && line="999 0"
 set -- $line
 trap 'echo "$(date +%s.%N) term $n" >> agent.log; exit 0' TERM INT
@@ -204,6 +204,24 @@ wait_for 40 '[ "$(count " start 4" "$A/agent.log")" = 1 ]' || fail "no fourth ru
 [ "$(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")" = "failed=0 failed=1 failed=2 failed=3 " ] \
   && ok "failed=0,1,2,3: the fourth start shows the calm red blink" \
   || fail "counted: $(awk '$2=="start" {printf "%s ", $4}' "$A/agent.log")"
+kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
+
+echo "7a. Conversation logs: the newest LOG_KEEP (50) by name, old clock-only names first"
+setup convlogs
+mkdir -p "$A/logs"
+for i in 1 2 3; do touch "$A/logs/conversation_2026010${i}_120000.txt"; done
+for i in $(seq 1 52); do touch "$A/logs/conversation_b$(printf %05d $i)_20260101_120000.txt"; done
+# File times backwards, as after a clock that went back: must not matter.
+touch -d '2030-01-01' "$A/logs/conversation_b00001_20260101_120000.txt"
+printf '60 0\n' > "$A/plan"
+start_script
+wait_for 15 '[ -f "$A/agent.pid" ]' || fail "agent never started"
+kept=$(ls "$A/logs" | grep -c '^conversation_')
+[ "$kept" = 50 ] && [ ! -e "$A/logs/conversation_20260103_120000.txt" ] && [ -e "$A/logs/conversation_b00052_20260101_120000.txt" ] \
+  && [ ! -e "$A/logs/conversation_b00001_20260101_120000.txt" ] && [ ! -e "$A/logs/conversation_b00002_20260101_120000.txt" ] \
+  && ok "50 kept: clock-only names and the lowest boot numbers removed, whatever the file times" \
+  || { fail "kept $kept:"; ls "$A/logs"; }
+grep -q "boot=1$" "$A/agent.log" && ok "the agent gets the boot number" || { fail "boot number:"; cat "$A/agent.log"; }
 kill -TERM "$SCRIPT_PID" 2>/dev/null; kill -TERM "$(cat "$A/agent.pid")" 2>/dev/null
 
 echo "7. A config.sh without MODE still starts OutdoorGPT (mode 3)"

@@ -210,7 +210,7 @@ One more thing always needs a human check on a new device: the **audio device nu
 | `RAG_INDEX` | `rag_index` | Where the index lives |
 | `CHAT_PORT` / `EMBED_PORT` | 8080 / 8081 | The servers listen on these, and the boot script hands the agent the same addresses, so a change here moves both |
 | `EMBED_HOST` | `127.0.0.1` | Interface the embedding server listens on. Private to the Pi by default; `0.0.0.0` lets a PC on the network build the index against it |
-| `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years |
+| `LOG_KEEP` | `50` | Conversation logs to keep. The boot script deletes older ones, so `logs/` cannot fill the SD card over the years. They are named `conversation_b<boot>_<date_time>.txt` and kept by boot number, not by file time: off-grid the clock can go back after a power cut, and a name is never reused |
 | `BOOT_LOGS_KEEP` | `5` | Boots whose logs are kept in `logs/boot/` (script, agent and both servers), so the reason for a restart survives it; see [Troubleshooting the boot](#troubleshooting-the-boot) |
 | `RESTART_DELAY` | `3` | Seconds before the boot script starts the agent again after it stopped. Doubles on every stop in a row, up to a minute; see [Step 6](#step-6--off-grid-start-everything-at-boot) |
 | `PLATFORM`, `AUDIO_IN`, `AUDIO_OUT`, `SPEAKING_RATE` | rpi5, 1, 0, 1. | Phone hardware. The audio device numbers matter: with the wrong ones the agent talks to the wrong sound card |
