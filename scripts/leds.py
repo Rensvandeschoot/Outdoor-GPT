@@ -11,7 +11,7 @@ fault; the LEDs show what is actually happening. Colours (device_settings.py):
                20 s or switch off and on, and read the boot logs
     listening  green                   (your turn: the mic is open)
     thinking   blue, pulsing           (the model is generating)
-    speaking   orange                  (the phone is talking, so wait)
+    speaking   amber                   (the phone is talking, so wait)
     done       purple                  (recipe delivered; press the button for a new one)
 
 They come on as soon as the agent's process starts, before the models load:
@@ -172,7 +172,7 @@ class StatusLeds:
         if h is None:
             return 'starting'
         # Priority order. Speech first: the closing line after a recipe is still
-        # speech, so it stays orange and only turns purple once the phone is
+        # speech, so it stays amber and only turns purple once the phone is
         # quiet. is_processing counts as speech rather than thinking, because it
         # means the speech worker is alive and it stays up between sentences
         # while is_speaking briefly drops; reading it as thinking would flick

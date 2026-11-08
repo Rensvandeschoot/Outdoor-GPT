@@ -402,10 +402,10 @@ The three APA102 LEDs on the ReSpeaker HAT show what the phone is doing, which m
 | Red, blinking calmly | Waiting to start again after an error, or the start failed three times in a row: hold the button 20 s or switch off and on, and read the boot logs |
 | Green | Your turn — the mic is open and it is listening |
 | Blue, pulsing | The model is generating |
-| Orange | The phone is talking, so wait |
+| Amber | The phone is talking, so wait |
 | Purple | Recipe delivered; press the button for a new session |
 
-Green and orange are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
+Green and amber are the pair that matter in use: they tell you whose turn it is, which is otherwise guesswork on a handset with no screen.
 
 The lights come on before the models load: the CLI starts them, and the GPIO, ahead of its heavy imports, so the phone breathes turquoise from about half a second into the start-up instead of staying dark until it can talk. Only the kernel's first seconds stay dark. While the instruction card is being drawn the breath holds still for a few seconds: the panel and the LEDs share the SPI bus.
 

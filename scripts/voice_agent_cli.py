@@ -94,7 +94,7 @@ def main():
     status_leds = StatusLeds(verbose=args.verbose, boot=boot_mode)
     if status_leds.start():
         print(">> Status LEDs active (turquoise breath=starting, green=your turn, "
-              "blue=thinking, orange=speaking, purple=done, red=something went wrong)")
+              "blue=thinking, amber=speaking, purple=done, red=something went wrong)")
     if boot_mode != 'normal':
         print(f">> Starting after {os.environ.get('OUTDOORGPT_FAILED_STARTS')} failed start(s) in a row: "
               f"LEDs show '{boot_mode}'. The boot logs are in logs/boot/.")
